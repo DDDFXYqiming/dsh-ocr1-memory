@@ -1,0 +1,57 @@
+{
+  "name": "@dsh-external/dsh-ocr1-memory",
+  "version": "0.1.0",
+  "description": "基于 DeepSeek-OCR1 光学压缩记忆系统：把记忆渲染为图像存储，支持 SoM 分段、年龄衰减/模糊化、激活召回、DSH Agent 检索",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./core": "./lib/core.js"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "cordis.patch.yml"
+  ],
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DDDFXYqiming/dsh-ocr1-memory.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "dsh-plugins",
+    "memory",
+    "optical-memory",
+    "ocr1",
+    "deepseek-ocr",
+    "agent-skills"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/ocr-server.js",
+    "typecheck": "node --check lib/index.js",
+    "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs",
+    "test:smoke": "node scripts/smoke.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/dsh-tools": ">=0.0.1-rc <2",
+    "@deepseek-ai/schemastery": ">=3.18.0 <4"
+  }
+}

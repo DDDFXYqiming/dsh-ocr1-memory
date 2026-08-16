@@ -1,0 +1,30 @@
+# dsh-ocr1-memory bundle patch：安装进 profile 时贡献这一层。
+# 用户可在 profile cordis.patch.yml 中按 id 覆盖 config（裸条目，勿重复 insert）。
+- insert:
+    - id: dsh-ocr1-memory
+      name: '@dsh-external/dsh-ocr1-memory'
+      config:
+        storeDir: ''
+        ocrBaseUrl: ''
+        ocrApiKey: ''
+        ocrModel: 'deepseek-ai/DeepSeek-OCR'
+        pythonPath: 'python'
+        requireOcr: false
+        useMockRenderer: false
+        ocrRepeatPenalty: 1.2
+        ocrNoRepeatNgramSize: 30
+        ocrTextOnlyPromptTokens: 5
+        autoStartOcrServer: false
+        ocrEmbeddingBaseUrl: ''
+        ocrEmbeddingApiKey: ''
+        ocrEmbeddingModel: ''
+        ocrEmbeddingTimeoutMs: 120000
+        ocrEmbeddingEmptyPromptTokens: 1
+        ocrEmbeddingAutoStart: false
+        ocrEmbeddingPort: 18084
+        ocrEmbeddingUbatchSize: 2048
+        ocrEmbeddingOnDemand: true
+        ocrEmbeddingIdleTimeoutMs: 300000
+        ocrEmbeddingContextSize: 2048
+        sharedStore: false
+        embeddingRetrieval: true
