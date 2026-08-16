@@ -67,6 +67,7 @@
     ocrEmbeddingContextSize: 2048      # embedding 服务上下文（不需要长生成，2048 够用）
     sharedStore: false                 # true 时每次操作前重读 memories.json，支持多 Agent 共享同一 store
     embeddingRetrieval: true           # true 时使用 1280 维视觉 embedding 相似度作为检索主信号（配合 ocrEmbeddingBaseUrl）
+    ocrMaxEntriesPerRetrieve: 5        # 文本检索不足 topK 时，最多对多少条记忆做 OCR 读回（防止大库检索卡死）
 ```
 
 ## 安装
