@@ -1,3 +1,5 @@
+简体中文 | [English](README.en.md)
+
 # @dsh-external/dsh-ocr1-memory
 
 基于 **DeepSeek-OCR: Contexts Optical Compression**（arXiv:2510.18234）思想实现的 DSH 光学记忆系统。
