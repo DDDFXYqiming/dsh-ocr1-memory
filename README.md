@@ -36,6 +36,10 @@
 | 视觉 embedding | 存储真实 DeepSeek-OCR 1280 维视觉向量（`visualMemory.embedding`）；**默认关闭**作为检索信号（实测未证明跨模态可靠，见下） |
 | 渲染缓存 | AgentOCR 式哈希缓存（v2，square 几何 + sidecar 同步）；分辨率/内容变化自动失效 |
 
+## 实现说明
+
+完整的**架构分层、光学定位器训练/部署链、对 DeepSeek-OCR / OCR-Memory 论文的复现程度对照**见 **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)**。配套文档：[STATUS](docs/STATUS.md)（状态）· [BENCHMARK](docs/BENCHMARK.md)（R1–R6 对比）· [EXPLORATION](docs/EXPLORATION.md)（探索实测）· [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md)（测试）。
+
 ## 配置
 
 在 profile 的 cordis.patch.yml 中覆盖（裸条目）：
@@ -169,6 +173,7 @@ llama-server.exe --host 127.0.0.1 --port 18080 --embeddings --pooling mean \
      - `retrieve` 在配置 `opticalLocatorEnabled` 时走**光学优先**路径：先对所有 SoM 图做列表定位，再按段索引取回原始 verbatim（不经过文本打分）；
      - 训练侧：`scripts/prepare_hotpotqa_locator.py`（HotpotQA distractor → 1024² SoM 渲染 + 0/1 标签 JSONL）+ `scripts/train_locator_unsloth.py`（DeepSeek-OCR + q/k/v/o LoRA r16/α32/dropout0.05，frozen encoder，加权 BCE，30%1024²/70%512² 课程；输入管线复用 vLLM 官方 `DeepseekOCRProcessor`：`input_ids/<image>+pixel_values(1024²全局+640² crops)+images_seq_mask`，监督位置=0/1 单 token(18/19)）；
      - 训练允许占用独显（RX 7800 XT/ROCm 已验证模型加载与 LoRA attach）；**运行时（llama-server OCR/embedding）默认 CPU-only 构建，不占独显**；
+     - **部署闭环已完成（2026-08-28）**：LoRA → 合并基座 → Q8_0 merged GGUF（3.12GB，与官方 Q8_0 字节一致）→ Windows 原生 llama-server 18080 → DSH 检索真实选段 + verbatim 回读（10 段 SoM 命中目标段；HotpotQA 未见样本 mean F1=0.333，部署保留训练效果 ~89%）。完整链路见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)；
      - 未启用定位器时保留旧"文本打分 + OCR 证据"路径，并明确标记为 legacy（`locatorStrict: true` 时宁报错不回落）。
 
 3. **视觉 embedding 默认关闭（诚实标注）**

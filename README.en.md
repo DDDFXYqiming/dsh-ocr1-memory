@@ -30,10 +30,14 @@ Memories are no longer stored as plain text — they are **rendered into images 
 | Memories blur over time | Decay by `createdAt` age; older memories drop to lower resolution |
 | Human vivid-to-fuzzy memory | The older a memory, the lower its resolution, while the semantic gist is preserved |
 | Memory refresh | A low-res hit → active recall restores high resolution, with a decay exemption for a period of time |
-| Avoiding hallucination | Locate-and-Transcribe style: returns the original verbatim segment; current locating is done via text scoring + OCR evidence, not the model directly outputting SoM numbers |
+| Avoiding hallucination | Locate-and-Transcribe: returns the original verbatim segment; locating runs through the **LoRA-trained optical locator** (K-bit 0/1 labels, `opticalLocatorEnabled`) with legacy text-scoring kept as a labeled fallback |
 | OCR-driven recall | Even if the original tokens don't match, when DeepSeek-OCR reads keywords from an image → the memory is still recalled on OCR evidence and the original text is fetched |
-| Visual embedding | Stores real DeepSeek-OCR 1280-dim visual vectors (`visualMemory.embedding`); at retrieval time the similarity between the query embedding and memory embeddings is the primary signal, combined with text segment locating |
+| Visual embedding | Stores real DeepSeek-OCR 1280-dim visual vectors (`visualMemory.embedding`); **off by default** as a retrieval signal (measured cross-modal discrimination was insufficient; honestly flagged), with pixel-level embedding as the fallback |
 | Render caching | AgentOCR-style segment hash cache; identical segment sets at the same resolution reuse images directly |
+
+## Implementation
+
+The full **architecture, optical-locator training/deployment chain, and a point-by-point reproduction matrix against the DeepSeek-OCR / OCR-Memory papers** live in **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** (Chinese). Companion docs: [STATUS](docs/STATUS.md) · [BENCHMARK](docs/BENCHMARK.md) · [EXPLORATION](docs/EXPLORATION.md) · [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md).
 
 ## Configuration
 
@@ -68,7 +72,7 @@ Override in the profile's cordis.patch.yml (bare entries):
     ocrEmbeddingIdleTimeoutMs: 300000  # how long (ms) the embedding server idles before auto-shutdown
     ocrEmbeddingContextSize: 2048      # embedding server context (no long generation needed; 2048 is enough)
     sharedStore: false                 # when true, memories.json is re-read before every operation, supporting multiple Agents sharing one store
-    embeddingRetrieval: true           # when true, 1280-dim visual embedding similarity is the primary retrieval signal (with ocrEmbeddingBaseUrl)
+    embeddingRetrieval: false          # when true, 1280-dim visual embedding similarity is used as a retrieval signal (default off: no measured cross-modal reliability)
     ocrMaxEntriesPerRetrieve: 5        # when text retrieval falls short of topK, the max number of memories to OCR read back (prevents large stores from stalling retrieval)
 ```
 
@@ -143,10 +147,14 @@ The current implementation is an **engineering approximation of OCR1's ideas**, 
    - Paper: DeepEncoder actually compresses document images into a small number of visual tokens, then hands them to DeepSeek-3B for decoding.
    - Current: uses llama.cpp's OCR/embeddings interfaces for optical read-back and visual vector storage; visual token counts come from interface statistics, not DeepEncoder's internal tensor outputs.
 
-2. **Locate-and-Transcribe is an engineering approximation**
-   - Paper/OCR-Memory: the model directly outputs the SoM number (Locate), then the original text is fetched (Transcribe).
-   - Current: locating relies on text token overlap scoring + OCR evidence; the original verbatim segment is returned to avoid generative hallucination, but it is not "the model outputting a number".
-   - The LoRA fine-tuning part — making the model output SoM numbers — is intentionally **out of scope** per the project goals.
+2. **Locate-and-Transcribe is now the paper's route (implemented end-to-end)**
+   - OCR-Memory: the model directly outputs the K-bit 0/1 relevance labels (Locate), then the original text is fetched deterministically (Transcribe).
+   - This repository has implemented the full chain (2026-08-28):
+     - JS pipeline: `parseBinaryRelevance` (reads 0/1 token logprobs) → `selectRelevanceIndices` (tau=0.4 + Top-K fallback) → `createOcrLocatorHttpClient` (OpenAI-compatible POST with strict K-label grammar);
+     - training: `scripts/prepare_hotpotqa_locator.py` (HotpotQA distractor → 1024² SoM render + 0/1 label JSONL) + `scripts/train_locator_unsloth.py` (DeepSeek-OCR + q/k/v/o LoRA r16/α32, frozen encoder, weighted BCE, strict `digit space ...` decoding);
+     - deployment: LoRA → merged Q8_0 GGUF (byte-identical to the official Q8_0) → llama-server (Windows-native 18080 or WSL2 CPU) → DSH retrieval with real segment selection;
+     - measured: 300×3 LoRA mean F1 0.375 vs base 0.139 (~2.7×) on the training side; 0.333 (~89% retained) after GGUF deployment; a 10-segment real-memory test selected [3,4] with segment 3 being the target evidence.
+   - `retrieve` uses the optical-first path when `opticalLocatorEnabled` is set; `locatorStrict: true` refuses to fall back to text scoring.
 
 3. **Visual embedding is already the primary retrieval signal (engineering implementation)**
    - `visualMemory.embedding` already stores real 1280-dim visual vectors;
@@ -161,20 +169,24 @@ The current implementation is an **engineering approximation of OCR1's ideas**, 
 
 - Services actually required right now:
   - `18080`: the DeepSeek-OCR combined server, providing both `/v1/chat/completions` (OCR read-back) and `/v1/embeddings` (1280-dim visual embedding / embedding retrieval).
-- The standalone `18084` is no longer needed; the exploratory leftovers on `18081/18082/18083` have all been shut down.
+- The standalone `18084` is no longer needed; the WorkBuddy-era validation servers on `18081/18082` have been stopped (task definitions kept, re-registrable).
 - Verified boundaries for further progress:
-  - Getting DeepSeek-OCR to output SoM numbers directly without fine-tuning: unreliable on the current llama.cpp backend (outputs unrelated text), so the paper's original Locate requires LoRA to advance.
+  - Getting DeepSeek-OCR to output SoM numbers directly without fine-tuning: unreliable on the current llama.cpp backend (outputs unrelated text) — **the paper's original Locate therefore requires LoRA, and the LoRA route is now implemented and deployed**.
   - DeepEncoder's internal compression pipeline / internal layer-by-layer visual token counts: not obtainable through llama.cpp's public interfaces.
   - Multimodal embeddings depend on llama.cpp extensions; on an AMD environment without NVIDIA/vLLM there is no way to switch to the official DeepEncoder outputs.
 - Conditions that would enable further progress:
-  - If LoRA fine-tuning is allowed: the "model outputs SoM numbers" Locate capability can be added.
+  - **Scale-up**: the current 300-sample training reaches 0.333 (deployed); thousands of HotpotQA samples (paper scale) should widen the gap further.
   - With an NVIDIA/vLLM environment available: DeepEncoder's internal compression, internal visual token outputs, and official multimodal embeddings can be aligned further.
+- Known pitfalls (verified 2026-08-28):
+  - **WorkBuddy's sandbox terminates llama-server subprocesses** (surfaces as 0xC0000374 heap corruption); scheduled tasks / DSH environments (node spawn detached) run fine — do not start llama-server inside WorkBuddy.
+  - **Q4_K_M base (with or without `--lora`) has unusable locator quality** (all-1 degradation without LoRA, wrong segment with LoRA) — the release form must be Q8_0 merged.
+  - This machine has 17.8 GB RAM; run only one inference server at a time.
 
 ## Development and testing
 
 ```bash
 npm run build        # node --check
-npm test             # 47 tests (including complex isolation tests + real OCR/embedding + robustness, if the backend is online)
+npm test             # 57 tests (including locator L1–L8, render geometry, real OCR/embedding + robustness)
 npm run test:smoke   # local end-to-end smoke test (real Python rendering + mock OCR)
 node scripts/compare-memory.mjs  # compare dsh-ocr1-memory vs dsh-memory (isolated temp environments)
 dsh --profile headless --dump-config   # verify the plugin tier is assembled
@@ -182,7 +194,7 @@ dsh --profile headless --dump-config   # verify the plugin tier is assembled
 
 ## Test and comparison results
 
-- `npm test`: **47/47 passing**.
+- `npm test`: **57/57 passing** (2026-08-28, including locator L1–L8 and render-geometry RG1–RG2; real OCR/embedding tests run against the Windows-native 18080 server).
 - Robustness: multi-Agent shared store, recovery from missing images / corrupted cache, and extra-long input boundaries all pass.
 - Comparison benchmark (`scripts/compare-memory.mjs`, isolated headless + official stock DSH):
   - dsh-ocr1-memory: all of R1–R6 PASS.
@@ -191,7 +203,10 @@ dsh --profile headless --dump-config   # verify the plugin tier is assembled
 
 ## Roadmap
 
-- [ ] LoRA fine-tune the DeepSeek-OCR decoder for SoM retrieval (the OCR-Memory approach), turning retrieval into "the model outputs a number" instead of text scoring
+- [x] OCR-Memory optical locator pipeline (`parseBinaryRelevance` / `selectRelevanceIndices` / `createOcrLocatorHttpClient` / optical-first retrieve; `opticalLocatorEnabled`)
+- [x] HotpotQA locator dataset scripts (`scripts/prepare_hotpotqa_locator.py`)
+- [x] DeepSeek-OCR + LoRA training/eval (`train_locator_unsloth.py` / `eval_locator.py` / `verify_collator_alignment.py`; RX 7800 XT ROCm measured base F1 0.139 → LoRA 0.375, single-sample F1 1.0)
+- [x] LoRA fine-tune the DeepSeek-OCR decoder for SoM retrieval (the OCR-Memory approach), deployed as a merged Q8_0 GGUF on llama-server (Windows-native 18080 verified; 10-seg SoM hit + verbatim fetch, mean F1 0.333 deployed)
 - [x] AgentOCR-style segment optical caching (hash-based segment caching to reduce rendering cost; `.render-cache` reuse implemented)
 - [x] Compression metrics and OCR text baseline calibration (`ocr1_mem_metrics` / `ocr1_mem_calibrate`)
 - [x] Explicit memory updates (`ocr1_mem_update`, conflict resolution)

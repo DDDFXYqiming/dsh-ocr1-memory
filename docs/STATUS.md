@@ -1,6 +1,7 @@
 # dsh-ocr1-memory 状态总览
 
 > 最后更新：2026-08-28 深夜（DSH 接手收尾）
+> 文档导航：[实现说明](IMPLEMENTATION.md) · [BENCHMARK](BENCHMARK.md) · [EXPLORATION](EXPLORATION.md) · [TEST_SPEC](TEST_SPEC.md) · [TEST_REPORT](TEST_REPORT.md) · [README](../README.md)
 
 ## 当前状态
 
