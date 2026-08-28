@@ -207,3 +207,40 @@ content: "Orbit API 需要登录并携带 token。"
 - [x] 可选 `systemPrompt.context()` 记忆摘要注入（默认关闭）
 - [ ] 论文规模训练与完整主表评测
 - [ ] DeepEncoder 内部逐层 token/embedding 导出
+
+## 测试结论与适用范围
+
+### 1. 结论
+
+在本机当前运行条件下，记忆系统的核心闭环可以正常工作：
+
+```text
+store → SoM 图像与原文持久化 → tier 刷新 → 检索 → segment Fetch → verbatim 返回
+```
+
+证据范围如下：
+
+| 能力 | 结论 | 证据 |
+|---|---|---|
+| 文本存储、分段、持久化、更新、遗忘 | 已确认 | 核心测试、T8/T10/T17–T19/T22、M1–M2 |
+| SoM 渲染、分辨率 tier、老化和 active recall | 已确认 | T1/T2/T13/T14、RG1–RG2、M3–M4 |
+| 真实 OCR 读图 | 当前配置已确认 | T6/T15/T16/T21/T23/T24 |
+| 视觉 embedding | 当前配置已确认 | E1–E5，E4 使用真实后端返回 1280 维向量 |
+| 光学定位协议与 verbatim Fetch | 已确认 | L1–L8；此前 DSH 隔离闭环 R1–R6 通过 |
+| 动态衰减与 context 快照 | 已确认 | 核心/context 测试，默认均为关闭 |
+| DSH 插件加载 | 已确认 | host 注入通过，运行时状态返回 `OK` |
+
+`npm test` 当前为 **70/70 通过**，另有 `npm run build`、`npm run test:smoke` 和 Markdown 链接检查通过。测试使用隔离临时 store，不代表任意模型、量化格式、后端或生产数据都无需额外验收。
+
+### 2. 无独立显卡运行结论
+
+记忆系统本身不要求本机独显：
+
+- DSH 插件的 Node.js 逻辑、JSON 持久化、tier 管理、context 快照和 Python/Pillow 渲染都可由 CPU 完成；
+- OCR、Locate 和视觉 embedding 是外部服务，当前已验证的运行方案是 Windows **CPU-only llama.cpp**，OCR 与 embedding 共用一个 CPU 服务，不依赖 RX 7800 XT 独显；
+- 如果不配置 OCR 后端且 `requireOcr=false`，文本记忆路径仍可工作；需要 OCR、Locate 或视觉 embedding 时才需要对应服务；
+- LoRA 训练是独立的开发流程，本机训练时使用过独显，但普通运行不需要重新训练，因此不构成运行时依赖。
+
+核显不是必需条件。若采用带 Vulkan 后端的 llama.cpp，可以把核显作为可选加速设备，但本报告的真实运行证据是 CPU-only 路径，尚未把当前插件的全部 OCR/embedding/定位链在核显上单独验收。要保证不使用独显，应将 `OCR_SERVER_PATH`/`ocrServerPath` 指向 CPU-only 的 `llama-server`；通用 PATH 解析本身不会替你选择 GPU 或核显。
+
+这只说明 **OCR1 记忆服务** 不依赖独显；DSH 使用的其他主模型是否占用独显，是另一条与本插件无关的链路。

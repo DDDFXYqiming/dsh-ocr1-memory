@@ -57,7 +57,19 @@ llama.cpp 的多模态 embedding 请求使用运行时返回的 media marker 和
 - llama.cpp 的公开 HTTP API 不提供 DeepEncoder 内部张量和逐层 visual-token 明细，因此本插件的 token 指标是接口级统计，不是论文内部测量。
 - 论文级训练规模以及 Mind2Web、AppWorld、RULER 等评测需要额外数据、时间和计算资源；本仓库的本地验证不能替代这些主表结果。
 
-## 6. 验证清单
+## 6. 无独显运行
+
+记忆系统本身不依赖独立显卡。插件逻辑、JSON 持久化、tier 管理、同步 context 快照和 Python/Pillow 图像渲染均可由 CPU 完成；OCR、Locate 和视觉 embedding 则由外部 llama.cpp/vLLM 服务提供。
+
+本机已验证的运行方案是 Windows CPU-only llama.cpp：OCR 与 embedding 共用一个 CPU 服务，运行时不占用 RX 7800 XT。LoRA 训练属于独立的开发流程，训练时可以使用 GPU，但部署已合并的模型和日常存取不需要重新训练。
+
+若不配置 OCR 后端且 `requireOcr=false`，文本记忆路径仍可使用。需要 OCR、Locate 或视觉 embedding 时，才需要启动对应服务。
+
+核显是可选加速设备，不是必要条件。带 Vulkan 后端的 llama.cpp 理论上可以使用核显，但当前本机真实验收覆盖的是 CPU-only 路径，没有把完整链路单独归因到核显。要保证不使用独显，应把 `OCR_SERVER_PATH` 或 `ocrServerPath` 指向 CPU-only `llama-server`；仅使用 PATH 解析不会自动选择 CPU、核显或独显。
+
+注意：这只描述 OCR1 记忆服务的硬件依赖；DSH 使用的其他主模型是否占用独显，属于另一条链路。
+
+## 7. 验证清单
 
 部署后建议按顺序检查：
 

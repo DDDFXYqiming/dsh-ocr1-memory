@@ -53,6 +53,18 @@ llama.cpp multimodal embedding requests use the server's current media marker an
 - The llama.cpp public HTTP API does not expose DeepEncoder internal tensors or layer-wise visual tokens.
 - Paper-scale datasets and Mind2Web/AppWorld/RULER evaluations require additional compute, time, and data.
 
+## Running without a discrete GPU
+
+The memory system itself does not require a discrete GPU. The plugin logic, JSON persistence, tier management, synchronous context snapshots, and Python/Pillow rendering can run on the CPU. OCR, locating, and visual embeddings are supplied by an external llama.cpp or vLLM service.
+
+The locally validated runtime uses a Windows CPU-only llama.cpp server for both OCR and embeddings, without using the RX 7800 XT. LoRA training is a separate development workflow: it can use a GPU, but normal deployment of a merged model and day-to-day memory operations do not require retraining.
+
+With no OCR backend and `requireOcr=false`, the text-memory path remains available. OCR, locating, and visual embeddings require their corresponding service.
+
+An integrated GPU is optional rather than required. A llama.cpp build with Vulkan may use an iGPU, but the complete plugin chain has been validated on CPU-only, not independently on the iGPU. To guarantee no discrete-GPU use, point `OCR_SERVER_PATH` or `ocrServerPath` to a CPU-only `llama-server`; PATH resolution alone does not select CPU, iGPU, or dGPU.
+
+This describes the hardware dependency of the OCR1 memory service only. Other DSH agent models may have independent GPU requirements.
+
 ## Validation checklist
 
 1. backend health and multimodal requests;
