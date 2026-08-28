@@ -10,12 +10,18 @@
       "default": "./lib/index.js"
     },
     "./package.json": "./package.json",
-    "./core": "./lib/core.js"
+    "./core": "./lib/core.js",
+    "./context": "./lib/context.js"
   },
   "files": [
     "lib",
-    "scripts",
+    "scripts/*.mjs",
+    "scripts/*.py",
+    "scripts/*.ps1",
+    "scripts/vllm_processors/*.py",
     "README.md",
+    "README.en.md",
+    "docs/*.md",
     "LICENSE",
     "cordis.patch.yml"
   ],
@@ -32,8 +38,7 @@
     "memory",
     "optical-memory",
     "ocr1",
-    "deepseek-ocr",
-    "agent-skills"
+    "deepseek-ocr"
   ],
   "engines": {
     "node": ">=22.19"
@@ -44,13 +49,14 @@
     }
   },
   "scripts": {
-    "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/ocr-server.js",
+    "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/context.js && node --check lib/memory-system.js && node --check lib/ocr-server.js",
     "typecheck": "node --check lib/index.js",
-    "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs test/locator.test.mjs test/render-geometry.test.mjs",
+    "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs test/locator.test.mjs test/render-geometry.test.mjs test/context.test.mjs test/governance.test.mjs",
     "test:smoke": "node scripts/smoke.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.0-rc <2",
     "@deepseek-ai/dsh-tools": ">=0.0.1-rc <2",
     "@deepseek-ai/schemastery": ">=3.18.0 <4"
   }

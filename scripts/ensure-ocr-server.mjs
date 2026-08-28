@@ -9,8 +9,8 @@ const BASE = `http://127.0.0.1:${PORT}/v1`
 
 try {
   const options = { baseUrl: BASE, port: PORT }
-  // Do not pass empty strings: they would override ensureOcrServer's tested
-  // Windows defaults and make the documented one-argument command fail.
+  // Do not pass empty strings: ensureOcrServer resolves the executable from
+  // OCR_SERVER_PATH/PATH and the model directory from OCR_MODEL_DIR.
   if (MODEL_DIR) options.modelDir = MODEL_DIR
   if (SERVER_PATH) options.serverPath = SERVER_PATH
   const result = await ensureOcrServer(options)

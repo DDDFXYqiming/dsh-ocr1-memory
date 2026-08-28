@@ -103,7 +103,7 @@
 - DSH 级 R1–R6 已在隔离 headless 环境完成完整对比（不 kill 进程，后台运行）：dsh-ocr1-memory 全部 PASS。
 - 已实现 robustness 增强：多 Agent 共享 store（`sharedStore`）、图像缺失/缓存损坏自动恢复、超长输入边界测试。
 - 现已通过 llama.cpp `/v1/embeddings` 的 marker-only 请求存储**真实 1280 维 DeepSeek-OCR 视觉 embedding**，并测量直接视觉 token 数（marker-only `prompt_tokens` − 空文本基线）。
-- 已将视觉 embedding 相似度作为**主检索信号**：`measureTextEmbedding` 嵌入查询，`retrieveSegmentsWithEmbeddings` 先按余弦相似度排序记忆，再在命中记忆内做文本分段定位。
+- 已实现视觉 embedding 相似度检索：`measureTextEmbedding` 嵌入查询，`retrieveSegmentsWithEmbeddings` 按余弦相似度参与排序；由于跨模态区分度验证不足，插件默认关闭 `embeddingRetrieval`，不把它作为无条件的主检索信号。
 - 已调研通用 agent 记忆测试规范（MemoryAgentBench / LongMemEval / LoCoMo / AMB），并整理成 `docs/TEST_SPEC.md`；R1–R6 与这些规范一一映射。
 - 尝试“无微调让 DeepSeek-OCR 直接输出 SoM 编号”的实验：当前 llama.cpp 后端在自定义 locate prompt 下输出不可靠（返回无关文本而非编号），因此在不做 LoRA 的前提下，论文原版 Locate（模型输出编号）不可推进。
 

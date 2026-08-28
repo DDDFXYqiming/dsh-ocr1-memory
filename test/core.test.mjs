@@ -10,6 +10,7 @@ import {
   tokenize,
   retrieveSegments,
   tierIndexFor,
+  decayMultiplier,
   createMemoryStore,
   createMockRenderer,
   createMockOcr,
@@ -50,6 +51,55 @@ test('tier ages memory from vivid to fuzzy', () => {
   assert.equal(tierIndexFor(entry, DEFAULT_TIERS), 2) // fuzzy
   const fresh = { createdAt: new Date().toISOString() }
   assert.equal(tierIndexFor(fresh, DEFAULT_TIERS), 0) // vivid
+})
+
+test('dynamic decay is opt-in, frequency-weighted, smooth, and bounded', () => {
+  const day = 24 * 60 * 60 * 1000
+  const at = Date.parse('2026-01-31T00:00:00.000Z')
+  const policy = {
+    enabled: true,
+    frequencyWindowMs: 7 * day,
+    recencyHalfLifeMs: 14 * day,
+    hitWeight: 1,
+    maxMultiplier: 4,
+  }
+  const recent = {
+    createdAt: new Date(at - 1.5 * day).toISOString(),
+    hits: 7,
+    accessHistory: Array.from({ length: 7 }, (_, i) => new Date(at - i * day).toISOString()),
+  }
+  assert.equal(tierIndexFor(recent, DEFAULT_TIERS, at, { ...policy, enabled: false }), 1)
+  assert.equal(tierIndexFor(recent, DEFAULT_TIERS, at, policy), 0)
+  assert.ok(decayMultiplier(recent, at, policy) > 1)
+
+  const stale = {
+    ...recent,
+    accessHistory: Array.from({ length: 7 }, (_, i) => new Date(at - (30 + i) * day).toISOString()),
+  }
+  assert.ok(decayMultiplier(recent, at, policy) > decayMultiplier(stale, at, policy))
+
+  const saturated = { ...recent, accessHistory: Array.from({ length: 200 }, () => new Date(at).toISOString()) }
+  assert.ok(decayMultiplier(saturated, at, policy) <= policy.maxMultiplier)
+})
+
+test('store records bounded access history using the injected clock', async () => {
+  const t = tmpStore()
+  try {
+    const at = Date.parse('2026-02-01T00:00:00.000Z')
+    const store = await createMemoryStore({
+      storeDir: t.dir,
+      renderer: createMockRenderer(),
+      now: () => at,
+      dynamicDecayEnabled: true,
+    })
+    await store.add({ text: 'clocked memory', source: 'clock' })
+    const result = await store.retrieve('clocked', { topK: 1 })
+    assert.equal(result.results.length, 1)
+    assert.equal(store.entries[0].lastAccessAt, new Date(at).toISOString())
+    assert.deepEqual(store.entries[0].accessHistory, [new Date(at).toISOString()])
+  } finally {
+    t.cleanup()
+  }
 })
 
 test('store + retrieve returns verbatim segments and uses OCR text', async () => {

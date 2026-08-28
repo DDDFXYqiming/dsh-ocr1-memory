@@ -1,91 +1,133 @@
+简体中文 | [English](IMPLEMENTATION.en.md)
+
 # 实现说明（Implementation & Reproduction Status）
 
-> 最后更新：2026-08-28。本文回答两个问题：**这个插件实现了什么、怎么实现的**，以及**对 DeepSeek-OCR（OCR1）与 OCR-Memory 论文的复现程度**。配套文档：[STATUS](STATUS.md)（状态）· [BENCHMARK](BENCHMARK.md)（R1–R6 对比）· [EXPLORATION](EXPLORATION.md)（探索实测记录）· [TEST_SPEC](TEST_SPEC.md) / [TEST_REPORT](TEST_REPORT.md)（测试）。
+本文说明插件的架构、关键数据流、可选配置，以及对 DeepSeek-OCR（OCR1）和 OCR-Memory 方法的复现范围。部署实验与平台相关记录见 [DEPLOYMENT.md](DEPLOYMENT.md)，研究过程见 [EXPLORATION.md](EXPLORATION.md)。
 
-## 1. 系统总览
+## 1. 架构
 
-光学记忆系统：**文本 → SoM 编号图像存储 → 按年龄降分辨率（vivid/normal/fuzzy）→ 光学定位器选段 → 返回原始 verbatim**。
-
-| 层 | 文件 | 职责 |
+| 层 | 代码 | 职责 |
 |---|---|---|
-| 核心引擎 | `lib/core.js` | 分段（空行分隔）、SoM 渲染调度、tier 衰减、检索召回、光学定位器、渲染缓存、并发安全 |
-| 分层治理 | `lib/memory-system.js` + `lib/governance*.js` | L1 索引 / L2 facts / L3 sops + 光学层（SoM 图、transcript、embedding、active recall） |
-| 工具注册 | `lib/index.js` | 11 个 `ocr1_mem_*` DSH 工具 |
-| 服务生命周期 | `lib/ocr-server.js` | llama-server 自动拉起（node spawn detached，Windows 原生） |
-| SoM 渲染 | `scripts/render_memory.py` | 1024²/512² 方形图、红色编号框 + 36pt 高对比标签、CJK 字体 |
-| 训练链 | `scripts/prepare_hotpotqa_locator.py` / `train_locator_unsloth.py` / `eval_locator.py` / `verify_collator_alignment.py` | HotpotQA SoM 数据 → LoRA 训练 → 评估 → 对齐自测 |
-| 部署 | `scripts/ensure-ocr-server.mjs` / `start-ocr-server.ps1` / `lib/ocr-server.js` | combined 服务（`--embeddings --pooling mean`）一键确保在线 |
+| 光学记忆引擎 | `lib/core.js` | 分段、SoM 渲染调度、层级衰减、检索、定位器、缓存与并发保存 |
+| DSH 入口 | `lib/index.js` | 配置解析、OCR/embedding 客户端、服务生命周期和 `ocr1_mem_*` 工具注册 |
+| context 快照 | `lib/context.js` | 从持久化 manifest 同步生成限长的 prompt context，不调用模型 |
+| 分层治理适配器 | `lib/memory-system.js`、`lib/governance.js` | L1/L2/L3 记忆、命名空间、证据与溯源、可选光学表示 |
+| 渲染器 | `scripts/render_memory.py` | 方形 SoM 图像、编号标签、CJK 字体与长文本布局 |
+| 训练辅助 | `scripts/prepare_hotpotqa_locator.py`、`train_locator_unsloth.py`、`eval_locator.py` | 定位数据、LoRA 训练、评估和 collator 对齐检查 |
 
-## 2. 光学定位器（Locate-and-Transcribe）：完整实现
+## 2. 数据流
 
-### 2.1 JS 检索管线（`lib/core.js`）
+### 2.1 写入
 
-- `parseBinaryRelevance`：从生成 token 流严格解析 K 位 0/1；有 logprobs 时按论文校准式 `p(1)=exp(z1)/(exp(z0)+exp(z1))` 计算概率；不接受自由文本（宁报错不猜测）。
-- `selectRelevanceIndices`：论文 **Appendix A** 规则——阈值优先（tau=0.4），全部低于阈值才用 Top-K 保底；`alwaysUnionTopK=true` 可切换论文 Eq.12 字面行为。
-- `createOcrLocatorHttpClient`：OpenAI 兼容 POST，请求形状与训练**逐字一致**：图在前 + text 前导 `\n` + **GBNF grammar 硬约束**（`d ::= "0" | "1"` 显式展开 K 位空格分隔，llama.cpp 侧等价于训练时的严格语法解码）+ temperature 0 + logprobs。
-- `retrieve` 光学优先路径：`opticalLocatorEnabled` 时对所有 SoM 图做列表定位 → 按段索引取回**原始 verbatim**（确定性 Fetch，不做生成式复述）；`locatorStrict: true` 时定位失败直接报错，绝不回退文本打分。
+1. 输入文本按空行和长度切分为有序段落，段落 id 从 1 开始。
+2. 渲染器把段落画到带编号的方形 SoM 图像中；原始段落同时写入 `memories.json`，作为确定性 Fetch 的唯一文本来源。
+3. 图像按内容、分辨率和渲染版本生成缓存键。相同内容可复用缓存，内容或 tier 变化会使 OCR、定位器和 embedding 证据失效。
+4. 可配置 OCR 读回和多模态 embedding。后端不可用时，宽松配置保留文本记忆；`requireOcr` 可改为严格报错。
 
-### 2.2 训练链（HotpotQA，WSL2 ROCm）
+### 2.2 层级与热度
 
-- 数据：`data/hotpotqa-300`（train，seed=7）与 `data/hotpotqa-30`（eval，seed=42），**ID 零重叠**；每样本 10 段 SoM（2 正/8 负），1024² 全局 + 640² crops。
-- 模型：`unsloth/DeepSeek-OCR` 4-bit QLoRA，q/k/v/o r16/α32 dropout 0.05，frozen encoder；输入严格按官方 `DeepseekOCRProcessor`：`[(patches, global)]` 二元组 + `<image>` id + `images_seq_mask`。
-- 监督：只监督 target 区间内 0/1 单 token（id 18/19）；`tokenizer.encode(f"\n{prompt}")` 的 `\n` 计入长度；EOS 不监督；w+=4/w-=1 类别平衡；生成遵循 `digit space ...` 语法。
-- 关键修复（2026-08-28 上午）：**监督错位 bug**（prompt 数字当标签）→ 对齐自测 6/6；images 结构定案。
-- 结果：单样本过拟合 F1=1.0；**300×3 LoRA mean F1=0.375 vs base 0.139（≈2.7×）**。
+默认 tier 为：
 
-### 2.3 部署链（LoRA → GGUF → llama-server）
+- `vivid`：新鲜记忆的高分辨率表示；
+- `normal`：经过第一阶段年龄衰减的表示；
+- `fuzzy`：长期记忆的低分辨率表示。
 
-1. `convert_lora_to_gguf.py`：adapter → `locator-lora.gguf`（96 张量 / 7.9MB）；`--base` 必须本地目录。
-2. **合并路线（发布形态）**：transformers `merge_and_unload` → 清理非持久 buffer（`position_ids`）→ 补齐配置（`preprocessor_config.json`、remote code）→ `convert_hf_to_gguf.py` 两遍（主模型 + mmproj）。
-3. 产物：`deepseek-ocr-locator-q8_0.gguf`（3.12GB，**字节数与官方 Q8_0 完全一致** 3,126,139,712）+ `mmproj-locator-q8_0.gguf`（461MB）。
-4. 运行时：**Windows 原生** llama-server（combined，18080）或 WSL2 Linux 构建纯 CPU；`-ngl 0` 不占独显。
-5. 验证（2026-08-28）：
-   - HotpotQA 6 条未见样本：**mean F1=0.333**（训练侧 0.375 → 部署保留 ~89%；base 同语法 0.139）。
-   - 10 段真实记忆定位：输出 `0 0 1 1 0 0 0 0 0 0`，**选中段 [3,4]，段 3 = 目标证据**，retrieve 回读 verbatim——**Locate-and-Transcribe 完整闭环**。
-   - `npm test` **57/57**（含真实 OCR + embeddings）。
+基础策略只依据 `createdAt`。启用 `dynamicDecayEnabled` 后，命中时间会以最多 32 条的 `accessHistory` 保存，近期命中按指数权重计算有限倍率：
 
-## 3. 对论文的复现程度（逐项对照）
+```text
+effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
+```
 
-### 3.1 DeepSeek-OCR（OCR1, arXiv:2510.18234）
+倍率有上限，且随访问变旧平滑下降；它不会修改 `createdAt`，也不会让记忆永久保持高清。该选项默认关闭，以避免升级旧库后改变既有 tier 行为。命中低清记忆仍会触发 active recall，并在短暂豁免期内保持 vivid。
 
-| 论文概念 | 本插件 | 程度 |
+### 2.3 检索
+
+无定位器时，插件使用文本重叠、OCR 读回证据和可选 embedding 的 legacy 路径。配置 `opticalLocatorEnabled` 后，流程变为：
+
+1. 对每条当前 SoM 图像请求 K 位 `0/1` 相关性标签；
+2. `parseBinaryRelevance` 严格解析标签及 logprobs；
+3. `selectRelevanceIndices` 使用阈值（默认 `0.4`），无命中时使用 Top-K 保底；
+4. 只按段索引从 `memories.json` Fetch 原文，返回 verbatim，不生成复述。
+
+定位请求通过 OpenAI 兼容接口发送，图像位于消息前部，带训练一致的换行前缀、温度 0、logprobs 和 llama.cpp GBNF 语法约束。`opticalLocatorStrict` 开启时，格式错误直接失败，不回退到文本打分。
+
+### 2.4 每轮 context 快照
+
+`autoInjectContext` 开启后，入口通过 DSH `systemPrompt.context()` 注册名为 `ocr1-memory:context` 的动态贡献。provider 每次 prompt assemble 同步读取 manifest，按命中数和最近访问时间排序，压缩段落文本，并受 `contextMaxEntries` 与 `contextMaxChars` 限制。
+
+该 provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifest 损坏时返回空字符串，不阻断 prompt 组装。由于快照会进入模型上下文和会话记录，默认关闭，启用前应确认记忆内容适合暴露给 Agent。
+
+## 3. 配置要点
+
+| 选项 | 默认 | 说明 |
+|---|---:|---|
+| `ocrBaseUrl` | 空 | OpenAI 兼容的 `/v1/chat/completions` 地址 |
+| `requireOcr` | `false` | OCR 不可用时是否直接失败 |
+| `opticalLocatorEnabled` | `false` | 是否走训练后的光学定位路径 |
+| `opticalLocatorThreshold` | `0.4` | `p(1)` 选择阈值 |
+| `opticalLocatorTopK` | `5` | 无阈值命中时的保底数量 |
+| `opticalLocatorStrict` | `true` | 定位标签格式错误时是否拒绝回退 |
+| `dynamicDecayEnabled` | `false` | 是否启用近期命中热度衰减 |
+| `decayFrequencyWindowMs` | 7 天 | 命中频率的平滑窗口 |
+| `decayRecencyHalfLifeMs` | 14 天 | 最近一次访问的权重半衰期 |
+| `decayHitWeight` | `1` | 热度对倍率的权重 |
+| `decayMaxMultiplier` | `4` | 有效年龄倍率上限 |
+| `autoInjectContext` | `false` | 是否每轮注入限长摘要 |
+| `contextMaxEntries` | `5` | 摘要最多包含的记忆条目 |
+| `contextMaxChars` | `4000` | 摘要最大字符数 |
+| `sharedStore` | `false` | 是否每次操作前重载 manifest |
+| `embeddingRetrieval` | `false` | 是否启用视觉 embedding 检索信号 |
+
+其余渲染、embedding 服务和自动启动选项可直接查看 `lib/index.js` 的 `Config`。
+
+## 4. 定位器训练与部署链
+
+训练脚本把带 distractor 的问答样本转成 SoM 图像和 K 位二元标签，再用 DeepSeek-OCR decoder 的 LoRA 适配器学习 Locate 任务。训练侧冻结视觉编码器，使用 q/k/v/o 投影的 LoRA、严格的标签区间监督和与推理一致的 `digit space ...` 输出语法。
+
+部署时可以把 adapter 合并回基础模型，再转换为目标推理后端支持的模型格式；运行时只要求 `/v1/chat/completions` 兼容接口和对应的多模态图像输入。模型格式转换、量化选择、服务参数和已验证的端到端样例属于平台实验，见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+本仓库包含数据准备、训练、评估和对齐检查脚本，但小规模本地训练结果不等于论文主表复现；完整规模需要论文所用数据集和评测套件。
+
+## 5. 论文复现矩阵
+
+### 5.1 DeepSeek-OCR（OCR1）
+
+| 论文概念 | 插件实现 | 程度 |
 |---|---|---|
-| 长文本 → 光学 2D 映射 | 段落自动分段 → SoM 方形图 | ✅ 工程近似 |
-| visual tokens 承载信息 | 分辨率模式 vivid 1280 / normal 1024 / fuzzy 640 + 接口级真实视觉 token 数 | ✅ 工程近似 |
-| DeepEncoder 内部压缩 | llama.cpp OCR/embeddings 接口读回 | ❌ 未复刻（公开接口无法取内部张量；transformers 可加载 DeepEncoder 权重，训练链即用） |
-| 官方 1280 维视觉 embedding | 真实存储（`visualMemory.embedding`），默认不作为检索主信号（实测区分度不足，诚实标注） | ✅ 接口级 |
+| 长文本到 optical 2D mapping | 段落 → SoM 方形图像 | 工程近似 |
+| visual tokens 承载信息 | 对应分辨率 tier，并记录后端接口级 token 统计 | 接口级近似 |
+| DeepEncoder 内部压缩 | 未从 llama.cpp 公共接口取得内部张量或逐层 token | 未复刻 |
+| 官方视觉 embedding | 可通过兼容的 embedding 接口持久化，默认不作为主检索信号 | 接口级 |
 
-### 3.2 OCR-Memory（方法蓝本, arXiv:2604.26622）
+### 5.2 OCR-Memory
 
-| 论文概念 | 本插件 | 程度 |
+| 方法概念 | 插件实现 | 程度 |
 |---|---|---|
-| SoM 编号分段 | 1024²/512² + 红色编号框 + 标签 | ✅ 完整实现 |
-| Locate：模型输出 K 位 0/1 标签 | **LoRA 微调 DeepSeek-OCR + 严格语法解码 + GBNF 部署**（不再是文本打分） | ✅ 完整实现（2026-08-28 部署闭环） |
-| Transcribe：确定性取回原文 | 按段索引返回原始 verbatim，零生成 | ✅ 完整实现 |
-| age-aware 多分辨率 | 按 createdAt 衰减 vivid→normal→fuzzy（强制重渲染，旧 OCR 证据失效） | ✅ 完整实现 |
-| active recall | 命中低清记忆 → 恢复高清 + 衰减豁免期 | ✅ 完整实现 |
-| 阈值 tau + Top-K | tau=0.4 + 无命中时 Top-5 保底（附录 A；Eq.12 可切换） | ✅ 完整实现 |
+| SoM 编号分段 | 编号框和段落索引持久化 | 已实现 |
+| Locate | LoRA 定位器输出 K 位二元标签，支持严格语法解码 | 已实现 |
+| Transcribe | 按索引返回持久化 verbatim 原文 | 已实现 |
+| age-aware multi-resolution | `vivid → normal → fuzzy`，按年龄重渲染 | 已实现 |
+| hit-frequency decay | 有上限、可选、向后兼容的近期命中热度策略 | 已实现（默认关闭） |
+| active recall | 命中低清图像后恢复 vivid | 已实现 |
+| 阈值与 Top-K | 默认阈值 + 无命中保底，可切换 union 规则 | 已实现 |
+| 每轮记忆 context | DSH `systemPrompt.context()` 限长快照 | 已实现（默认关闭） |
 
-### 3.3 未复刻 / 明确不做
+## 6. 明确边界
 
-- DeepEncoder 内部压缩管线与逐层 visual token 数（需 NVIDIA/vLLM 或 transformers 钩子）。
-- 论文主表级规模复现：本机训练 300 条；论文用更大 HotpotQA + Mind2Web/AppWorld/RULER 评测。
-- 多模态 embedding 官方 DeepEncoder 输出（AMD 环境无 vLLM/NVIDIA）。
+以下内容不在本插件中宣称完整复现：
 
-## 4. 部署与运维（2026-08-28 实证）
+- DeepEncoder 内部压缩实现、逐层 visual-token 数和内部张量可视化；
+- 论文规模的训练数据、Mind2Web/AppWorld/RULER 等主表评测；
+- 与官方内部 DeepEncoder 完全等价的多模态 embedding 输出；
+- 任何特定硬件、驱动、量化格式或服务编排的普遍兼容性。
 
-- **Windows 原生**：`node scripts/ensure-ocr-server.mjs 18080`（combined 模式自动带 `--embeddings --pooling mean`）；Q8_0 merged 服务 10 段定位与 WSL 输出逐位一致。
-- **已知坑**：
-  - WorkBuddy 沙箱会终止其子进程中的 llama-server（表现为 0xC0000374）——计划任务 / DSH 环境（node spawn detached）正常，不要在 WorkBuddy 内起服务。
-  - **Q4_K_M 基座（含 `--lora`）定位效果不可用**（无 LoRA 全 1 退化、Q4+LoRA 选错段）——发布形态必须是 Q8_0 merged。
-  - 本机内存 17.8GB，同时只宜运行一个推理服务。
-- 服务：18080 = Windows 原生 Q8_0 merged；重启后手动 `node scripts/ensure-ocr-server.mjs 18080`（或配置 `autoStartOcrServer` + 自定义模型目录）。
+这些边界来自运行时公开接口、模型格式和可用资源，不影响 SoM、定位、确定性 Fetch、年龄 tier、active recall 以及可选 context 的工程功能。
 
-## 5. 文档导航
+## 7. 相关文档
 
-- [STATUS.md](STATUS.md) — 当前状态总览（测试、服务、差距）
-- [BENCHMARK.md](BENCHMARK.md) — dsh-ocr1-memory vs dsh-memory R1–R6 对比
-- [EXPLORATION.md](EXPLORATION.md) — 论文阅读与实测探索记录
-- [TEST_SPEC.md](TEST_SPEC.md) / [TEST_REPORT.md](TEST_REPORT.md) — 测试规范与报告
-- 论文原文：`docs/papers/`（2510.18234 / 2604.26622，不入库）
-- [README.md](../README.md) / [README.en.md](../README.en.md) — 快速上手
+- [README.md](../README.md) / [README.en.md](../README.en.md)：快速入口；
+- [DEPLOYMENT.md](DEPLOYMENT.md)：后端部署与平台验证记录；
+- [STATUS.md](STATUS.md)：当前状态；
+- [BENCHMARK.md](BENCHMARK.md)：隔离基准；
+- [EXPLORATION.md](EXPLORATION.md)：研究与实验记录；
+- [TEST_SPEC.md](TEST_SPEC.md) / [TEST_REPORT.md](TEST_REPORT.md)：测试规范与结果。

@@ -29,7 +29,7 @@ async function main() {
       tiers: DEFAULT_TIERS,
     })
     const a = await store.add({ text: 'Orbit API 需要登录并携带 token。\n\n登录态 10 分钟过期。', source: 'smoke' })
-    const b = await store.add({ text: '今天的天气很好。', source: 'smoke' })
+    const b = await store.add({ text: '今天的天气很好。', source: 'smoke-weather' })
     const res = await store.retrieve('orbit token', { topK: 5 })
     console.log('STORE_A', JSON.stringify(a))
     console.log('STORE_B', JSON.stringify(b))

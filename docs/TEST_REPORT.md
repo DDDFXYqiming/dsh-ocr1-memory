@@ -18,11 +18,14 @@
 
 | 套件 | 结果 |
 |---|---|
-| `npm test`（已固化） | 47/47 通过 |
-| 核心单元测试 | 8/8 通过 |
+| `npm test`（已固化） | 70/70 通过 |
+| 核心与 context 单元测试 | 14/14 通过 |
 | 复杂隔离测试（T1–T24） | 24/24 通过 |
 | OCR HTTP / 渲染缓存测试 | 2/2 通过 |
 | Embedding 测试（E1–E5） | 5/5 通过 |
+| 定位器测试（L1–L8） | 8/8 通过 |
+| 治理层与取消信号测试 | 7/7 通过 |
+| 渲染几何测试（RG1–RG2） | 2/2 通过 |
 | OCR server 生命周期测试 | 2/2 通过 |
 | Robustness 测试（M1–M6） | 6/6 通过 |
 | 真实 OCR / Embedding 隔离测试 | PASS（T6/T15/T16/T21/T23/T24/E4，依赖 llama-server） |
@@ -32,6 +35,8 @@
 - `splitSegments`：空行分段、连续 id、超长段落切分
 - `scoreSegment`：命中、未命中、空文本
 - `tierIndexFor`：vivid/normal/fuzzy 年龄边界
+- 动态衰减：默认关闭、近期频率、平滑过期、倍率上限和注入时钟
+- context 快照：热度排序、字符上限、空/损坏 manifest 容错
 - store + retrieve：verbatim 返回、OCR 文本写入
 - active recall：fuzzy → vivid
 - OCR 驱动召回：原始文本未命中但 OCR 命中时仍召回
@@ -63,7 +68,7 @@
 - 字面命中片段直接使用片段级得分 `segScore`；
 - OCR 聚合分只用于“原始文本无命中时的 OCR 兜底召回”，不再污染普通片段得分。
 
-**回归**：T4 通过，单元测试仍 9/9。
+**回归**：T4 通过，核心与 context 单元测试 14/14。
 
 ### 2. 分辨率层级未对齐 OCR1 官方模式
 
@@ -85,7 +90,7 @@ fuzzy  640  → 100 tokens（对应 OCR1 Small）
 | E2 | 记忆 store 存储真实 multimodal embedding 与 `visualTokensDirect` | PASS |
 | E3 | embedding 后端失败时降级为像素 embedding 并记录 `embeddingError` | PASS |
 | E4 | 真实 DeepSeek-OCR embeddings 后端生成 1280 维视觉 embedding | PASS |
-| E5 | 视觉 embedding 相似度作为主检索信号：embedding 更近的记忆排在前面 | PASS |
+| E5 | 启用 embedding 检索时：向量更近的记忆排在前面 | PASS |
 
 真实 E4 实测：`prompt_tokens=785`（marker-only），空文本基线 `prompt_tokens=1`，直接视觉 token=784，embedding 维度=1280。
 
@@ -152,7 +157,7 @@ content: "Orbit API 需要登录并携带 token。"
 - 在 `createMemoryStore` 内增加 `renderLocks`，同一 `outputPath` 的并发渲染只执行一次；
 - 缓存写入改为 best-effort，失败不阻断主流程。
 
-**回归**：T12 通过，单元测试仍 9/9。
+**回归**：T12 通过，核心与 context 单元测试 14/14。
 
 ## 已发现并修复的问题（第三轮：DSH 级 R5/R6 验证）
 
@@ -196,5 +201,9 @@ content: "Orbit API 需要登录并携带 token。"
 - [x] 图像缺失/缓存损坏恢复测试
 - [x] 超长输入边界测试（>200KB 多段落 + 超长单段落）
 - [ ] 超长输入（10MB）与内存压力
-- [ ] LoRA 微调：**按目标要求不需要做**
+- [x] LoRA 定位器训练/评估脚本与合并部署链：详见 `docs/DEPLOYMENT.md`
 - [x] 直接视觉 token 数：通过 embeddings 端点 marker-only 请求测量（`visualMemory.visualTokensDirect`）
+- [x] 命中频率动态衰减（默认关闭，保留旧库行为）
+- [x] 可选 `systemPrompt.context()` 记忆摘要注入（默认关闭）
+- [ ] 论文规模训练与完整主表评测
+- [ ] DeepEncoder 内部逐层 token/embedding 导出

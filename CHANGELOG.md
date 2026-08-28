@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.1.0 (current)
+## Unreleased
+
+### Added
+- Optional hit-frequency decay with bounded `accessHistory` and injected-clock support.
+- Optional `systemPrompt.context()` memory snapshots with entry/character limits.
+- `docs/DEPLOYMENT.md` for backend and platform-specific deployment notes.
+
+### Tests
+- `npm test`: 70/70 passing, including dynamic decay, context snapshots, governance, and cancellation coverage.
+
+## 0.1.0
 
 ### Added
 - 真实 DeepSeek-OCR 多模态 embedding 支持
@@ -11,7 +21,7 @@
   - `lib/ocr-server.js` 支持启动 `--embeddings --pooling mean -ub 2048` 专用服务
 - 视觉 embedding 相似度检索
   - `measureTextEmbedding` 用于把查询文本嵌入到同一向量空间
-  - `embeddingRetrieval` 配置（默认 true）：检索时先用 query embedding 与记忆 visual embedding 的余弦相似度作为主信号排序，再在命中的记忆内做文本分段定位
+  - `embeddingRetrieval` 配置（默认 false）：检索时先用 query embedding 与记忆 visual embedding 的余弦相似度参与排序，再在命中的记忆内做文本分段定位
   - `retrieveSegmentsWithEmbeddings` 混合排序函数
 - DSH 插件骨架：`@dsh-external/dsh-ocr1-memory`
 - 核心记忆引擎 `lib/core.js`
