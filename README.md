@@ -4,9 +4,7 @@
 
 基于 **DeepSeek-OCR: Contexts Optical Compression**（OCR1）思想的 DSH 光学记忆插件。
 
-> 这是 DSH plugin，不是 agent skill；仓库不需要 `SKILL.md`。
-
-文本记忆会被按段落渲染为带 SoM 编号的图像，旧记忆按年龄降低分辨率；检索时可由光学定位器选择相关段，再确定性地返回原始 verbatim 文本。这样既保留视觉压缩路径，也避免生成式复述带来的幻觉。
+文本记忆会被按段落渲染为带 SoM 编号的图像，旧记忆按年龄降低分辨率；检索时可由光学定位器选择相关段，再确定性地返回原始 verbatim 文本。
 
 ## 能力
 
@@ -39,24 +37,24 @@
 - id: dsh-ocr1-memory
   config:
     storeDir: ''
-    ocrBaseUrl: ''                 # OpenAI 兼容 /v1/chat/completions；留空可使用文本路径
+    ocrBaseUrl: ''
     ocrApiKey: ''
     ocrModel: 'deepseek-ai/DeepSeek-OCR'
     requireOcr: false
-    opticalLocatorEnabled: false   # 需要已训练的定位器模型
+    opticalLocatorEnabled: false
     opticalLocatorBaseUrl: ''
     opticalLocatorModel: 'deepseek-ocr-memory'
     opticalLocatorThreshold: 0.4
     opticalLocatorTopK: 5
-    dynamicDecayEnabled: false     # 按近期命中频率延缓层级衰减；升级兼容，默认关闭
-    autoInjectContext: false       # 每次 prompt assemble 注入限长记忆摘要；默认关闭
+    dynamicDecayEnabled: false
+    autoInjectContext: false
     contextMaxEntries: 5
     contextMaxChars: 4000
     sharedStore: false
-    embeddingRetrieval: false      # 视觉 embedding 检索，默认关闭
+    embeddingRetrieval: false
 ```
 
-未列出的高级选项（渲染器、服务生命周期、embedding、定位器严格模式等）见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+高级选项见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 安装
 
@@ -71,24 +69,14 @@ dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
 - `/v1/chat/completions`：OCR 读回和光学定位；
 - `/v1/embeddings`：可选的多模态视觉 embedding。
 
-将 `ocrBaseUrl` 指向兼容服务即可启用 OCR；未配置时仍可使用不依赖 OCR 的文本记忆路径。后端启动、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
-
-## 复现范围
-
-这是对 OCR1 和 OCR-Memory 思想的工程实现，不宣称复刻模型内部机制或论文主表：
-
-- ✅ SoM、年龄分辨率、active recall、Locate-and-Transcribe、严格 K-bit 定位链；
-- ✅ 可选真实视觉 embedding、命中频率动态衰减、DSH `systemPrompt.context()` 摘要注入；
-- ⚠️ DeepEncoder 内部张量/逐层 visual token、官方内部 embedding 和论文规模评测不在本插件内完整复现。
-
-详细架构、训练/部署链和逐项对照见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+配置 `ocrBaseUrl` 后即可启用 OCR。后端启动、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 文档
 
-- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图与未实现边界；
-- [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与论文复现矩阵；
-- [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证注意事项；
-- [STATUS](docs/STATUS.md)：当前实现状态与已知边界；
+- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图；
+- [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与实现说明；
+- [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证；
+- [STATUS](docs/STATUS.md)：当前实现状态；
 - [BENCHMARK](docs/BENCHMARK.md)：与 `dsh-memory` 的隔离对比；
 - [EXPLORATION](docs/EXPLORATION.md)：研究与实测记录；
 - [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md)：测试说明与报告。

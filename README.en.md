@@ -4,9 +4,7 @@
 
 A DSH optical-memory plugin inspired by **DeepSeek-OCR: Contexts Optical Compression** (OCR1).
 
-> This is a DSH plugin, not an agent skill; the repository does not need `SKILL.md`.
-
-Text memories are split into paragraphs and rendered as SoM-numbered images. Older memories move through lower-resolution tiers; retrieval can use an optical locator to select relevant segments and then return the original verbatim text deterministically. This preserves the optical path without generative paraphrase.
+Text memories are split into paragraphs and rendered as SoM-numbered images. Older memories move through lower-resolution tiers; retrieval can use an optical locator to select relevant segments and then return the original verbatim text deterministically.
 
 ## Capabilities
 
@@ -28,7 +26,7 @@ Text memories are split into paragraphs and rendered as SoM-numbered images. Old
 1. Text is split by paragraphs and length, then rendered into SoM images.
 2. `vivid → normal → fuzzy` resolution tiers decay with age; a low-resolution hit triggers active recall.
 3. With an optical locator configured, the model emits K-bit `0/1` labels and the plugin selects segments using threshold and Top-K rules.
-4. Fetch reads the selected segments from persisted source text; it does not generate replacement text.
+4. Fetch reads the selected segments from persisted source text and returns them verbatim.
 5. Visual embeddings, hit-frequency decay, and per-turn context injection are optional.
 
 ## Configuration
@@ -39,24 +37,24 @@ Override the needed options in the profile's `cordis.patch.yml`:
 - id: dsh-ocr1-memory
   config:
     storeDir: ''
-    ocrBaseUrl: ''                 # OpenAI-compatible /v1/chat/completions; empty keeps text-only paths available
+    ocrBaseUrl: ''
     ocrApiKey: ''
     ocrModel: 'deepseek-ai/DeepSeek-OCR'
     requireOcr: false
-    opticalLocatorEnabled: false   # requires a trained locator model
+    opticalLocatorEnabled: false
     opticalLocatorBaseUrl: ''
     opticalLocatorModel: 'deepseek-ocr-memory'
     opticalLocatorThreshold: 0.4
     opticalLocatorTopK: 5
-    dynamicDecayEnabled: false     # slow tier decay from recent hit frequency; opt-in for compatibility
-    autoInjectContext: false       # add a bounded memory snapshot on each prompt assembly; opt-in
+    dynamicDecayEnabled: false
+    autoInjectContext: false
     contextMaxEntries: 5
     contextMaxChars: 4000
     sharedStore: false
-    embeddingRetrieval: false      # visual-embedding retrieval; off by default
+    embeddingRetrieval: false
 ```
 
-Advanced renderer, server-lifecycle, embedding, and strict-locator options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
+Advanced options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
 
 ## Installation
 
@@ -71,24 +69,14 @@ The plugin uses OpenAI-compatible endpoints:
 - `/v1/chat/completions` for OCR read-back and optical locating;
 - `/v1/embeddings` for optional multimodal visual embeddings.
 
-Set `ocrBaseUrl` to a compatible service to enable OCR. Without it, the text-based memory path remains available. Backend startup, model formats, and platform notes are in [docs_en/DEPLOYMENT.md](docs_en/DEPLOYMENT.md).
-
-## Reproduction scope
-
-This is an engineering implementation of OCR1 and OCR-Memory ideas, not a claim to reproduce their internal model mechanisms or paper-scale tables:
-
-- ✅ SoM, age-aware resolution, active recall, Locate-and-Transcribe, and strict K-bit locating;
-- ✅ optional real visual embeddings, hit-frequency decay, and DSH `systemPrompt.context()` snapshots;
-- ⚠️ DeepEncoder internal tensors/layer-wise visual tokens, official internal embeddings, and paper-scale evaluation are not fully reproduced here.
-
-See [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md) for the architecture, training/deployment chain, and reproduction matrix.
+Set `ocrBaseUrl` to enable OCR. Backend startup, model formats, and platform notes are in [docs_en/DEPLOYMENT.md](docs_en/DEPLOYMENT.md).
 
 ## Documentation
 
-- [WORKFLOW](docs_en/OPTICAL_MEMORY_WORKFLOW.md): workflow diagrams and implementation boundaries;
-- [IMPLEMENTATION](docs_en/IMPLEMENTATION.md): architecture and paper-reproduction matrix;
-- [DEPLOYMENT](docs_en/DEPLOYMENT.md): backend deployment and validation notes;
-- [STATUS](docs_en/STATUS.md): implementation status and boundaries;
+- [WORKFLOW](docs_en/OPTICAL_MEMORY_WORKFLOW.md): workflow diagrams;
+- [IMPLEMENTATION](docs_en/IMPLEMENTATION.md): architecture and implementation notes;
+- [DEPLOYMENT](docs_en/DEPLOYMENT.md): backend deployment and validation;
+- [STATUS](docs_en/STATUS.md): current implementation status;
 - [BENCHMARK](docs_en/BENCHMARK.md): isolated comparison with `dsh-memory`;
 - [EXPLORATION](docs_en/EXPLORATION.md): research and experiment notes;
 - [TEST_SPEC](docs_en/TEST_SPEC.md) / [TEST_REPORT](docs_en/TEST_REPORT.md): testing documentation.
