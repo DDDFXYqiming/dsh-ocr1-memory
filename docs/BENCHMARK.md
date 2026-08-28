@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/BENCHMARK.md)
+
 # Agent Memory Benchmark：dsh-ocr1-memory vs dsh-memory
 
 ## 依据

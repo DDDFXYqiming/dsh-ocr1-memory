@@ -22,6 +22,7 @@
     "README.md",
     "README.en.md",
     "docs/*.md",
+    "docs_en/*.md",
     "LICENSE",
     "cordis.patch.yml"
   ],

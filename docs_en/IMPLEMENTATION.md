@@ -1,0 +1,134 @@
+[Chinese](../docs/IMPLEMENTATION.md) | English
+
+# Implementation and Reproduction Status
+
+This document describes the plugin architecture and its reproduction scope for DeepSeek-OCR (OCR1) and OCR-Memory. Platform-specific experiments live in [DEPLOYMENT.md](DEPLOYMENT.md), and the research log is in [EXPLORATION.md](EXPLORATION.md).
+
+## 1. Architecture
+
+| Layer | Code | Responsibility |
+|---|---|---|
+| Optical memory engine | `lib/core.js` | segmentation, tier decay, retrieval, locating, caching, and atomic persistence |
+| DSH entry | `lib/index.js` | configuration, backend clients, lifecycle, tool and context registration |
+| Context snapshot | `lib/context.js` | bounded synchronous prompt context from the manifest |
+| Governed adapter | `lib/memory-system.js`, `lib/governance.js` | L1/L2/L3 memory, namespaces, evidence, and provenance |
+| Renderer | `scripts/render_memory.py` | square SoM images, numbered segments, CJK and long-text layout |
+| Training helpers | `scripts/prepare_hotpotqa_locator.py`, `train_locator_unsloth.py`, `eval_locator.py` | locator data, LoRA training, evaluation, and alignment checks |
+
+## 2. Data flow
+
+### 2.1 Write
+
+1. Input text is split by blank lines and length into ordered segments, starting at segment id 1.
+2. The renderer draws the segments into a numbered square SoM image; the original segments are written to `memories.json` as the sole source for deterministic Fetch.
+3. The image cache key includes content, resolution, and renderer version. A content or tier change invalidates OCR, locator, and embedding evidence.
+4. OCR readback and multimodal embeddings are optional. If the backend is unavailable, lenient configuration preserves text memory; `requireOcr` can enable strict failure.
+
+### 2.2 Tiers and hit frequency
+
+The default tiers are:
+
+- `vivid`: high-resolution representation of a fresh memory;
+- `normal`: representation after the first age transition;
+- `fuzzy`: low-resolution representation of a long-term memory.
+
+The base policy uses only `createdAt`. With `dynamicDecayEnabled`, up to 32 access timestamps are retained and recent hits contribute a bounded exponential multiplier:
+
+```text
+effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
+```
+
+The multiplier is capped and decays smoothly as accesses become old. It does not modify `createdAt` or keep a memory permanently high-resolution. The option is disabled by default so upgrading an existing store preserves its tier behavior. A hit on a low-resolution memory still triggers active recall and a short vivid grace period.
+
+### 2.3 Retrieval
+
+Without a locator, the plugin uses the legacy path of text overlap, OCR readback evidence, and optional embeddings. With `opticalLocatorEnabled`, the flow is:
+
+1. request K-bit `0/1` relevance labels for each current SoM image;
+2. strictly parse labels and logprobs with `parseBinaryRelevance`;
+3. apply the default `0.4` threshold with Top-K fallback through `selectRelevanceIndices`;
+4. Fetch the selected original segments by index from `memories.json` and return them verbatim.
+
+Locator requests use an OpenAI-compatible interface. The image appears at the front of the message with the training-consistent newline prefix, temperature 0, logprobs, and llama.cpp GBNF constraints. With `opticalLocatorStrict` enabled, malformed output fails instead of falling back to text scoring.
+
+### 2.4 Per-turn context snapshots
+
+With `autoInjectContext` enabled, the entry registers `ocr1-memory:context` through DSH `systemPrompt.context()`. The provider synchronously reads the manifest, ranks entries by hit count and recent access, truncates segment text, and enforces `contextMaxEntries` and `contextMaxChars`.
+
+The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. Since the snapshot enters model context and session records, the option is disabled by default.
+
+## 3. Key options
+
+| Option | Default | Purpose |
+|---|---:|---|
+| `ocrBaseUrl` | empty | OpenAI-compatible `/v1/chat/completions` endpoint |
+| `requireOcr` | `false` | fail instead of degrading when OCR is unavailable |
+| `opticalLocatorEnabled` | `false` | enable the trained optical locating path |
+| `opticalLocatorThreshold` | `0.4` | `p(1)` selection threshold |
+| `opticalLocatorTopK` | `5` | fallback when no segment crosses the threshold |
+| `opticalLocatorStrict` | `true` | reject malformed labels |
+| `dynamicDecayEnabled` | `false` | enable recent-hit-aware tier aging |
+| `decayFrequencyWindowMs` | 7 days | smoothing window for hit frequency |
+| `decayRecencyHalfLifeMs` | 14 days | half-life for recent-access weight |
+| `decayHitWeight` | `1` | hit-frequency weight in the multiplier |
+| `decayMaxMultiplier` | `4` | maximum effective-age multiplier |
+| `autoInjectContext` | `false` | add a bounded snapshot during prompt assembly |
+| `contextMaxEntries` | `5` | maximum entries in the snapshot |
+| `contextMaxChars` | `4000` | maximum snapshot characters |
+| `sharedStore` | `false` | reload the manifest before each operation |
+| `embeddingRetrieval` | `false` | enable visual-embedding retrieval signals |
+
+The remaining renderer, embedding-service, and auto-start options are defined in the `Config` object in `lib/index.js`.
+
+## 4. Locator training and deployment chain
+
+The training scripts convert question/distractor samples into SoM images and K-bit binary labels, then apply a LoRA adapter to the DeepSeek-OCR decoder. The visual encoder remains frozen. Training supervises only the target label interval and uses the same `digit space ...` output grammar as inference.
+
+For deployment, merge the adapter into the base model and convert it to a format supported by the target multimodal backend. Runtime requires an OpenAI-compatible `/v1/chat/completions` endpoint with the corresponding image input. Model conversion, quantization choices, service parameters, and validated end-to-end examples are documented in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+The repository includes data preparation, training, evaluation, and alignment-check scripts, but small-scale local training is not paper-table reproduction; full scale requires the paper's datasets and evaluation suites.
+
+## 5. Reproduction matrix
+
+### 5.1 DeepSeek-OCR (OCR1)
+
+| Paper concept | Plugin implementation | Degree |
+|---|---|---|
+| Long text to optical 2D mapping | paragraph → square SoM image | engineering approximation |
+| Visual tokens carry information | resolution-aligned tiers and endpoint-level token statistics | interface-level approximation |
+| DeepEncoder internal compression | no internal tensors or layer-wise token export from the llama.cpp public interface | not reproduced |
+| Official visual embeddings | persisted through a compatible embedding endpoint; disabled as the primary retrieval signal by default | interface-level |
+
+### 5.2 OCR-Memory
+
+| Method concept | Plugin implementation | Degree |
+|---|---|---|
+| SoM numbered segments | numbered boxes and persistent segment indexes | implemented |
+| Locate | LoRA locator emits K-bit binary labels with strict grammar decoding | implemented |
+| Transcribe | persistent verbatim text returned by segment index | implemented |
+| Age-aware multi-resolution | `vivid → normal → fuzzy`, with age-based rerendering | implemented |
+| Hit-frequency decay | bounded, optional, backward-compatible recent-hit policy | implemented, disabled by default |
+| Active recall | low-resolution hit restores vivid | implemented |
+| Threshold and Top-K | default threshold with no-hit fallback; union rules can be selected | implemented |
+| Per-turn memory context | bounded DSH `systemPrompt.context()` snapshot | implemented, disabled by default |
+
+## 6. Explicit boundaries
+
+This repository does not claim full reproduction of:
+
+- DeepEncoder internal compression, layer-wise visual-token counts, or internal tensor visualization;
+- paper-scale training data and Mind2Web/AppWorld/RULER main-table evaluation;
+- multimodal embeddings fully equivalent to the official internal DeepEncoder representation;
+- universal compatibility across any specific hardware, driver, quantization format, or service supervisor.
+
+These boundaries arise from public runtime interfaces, model formats, and available resources. They do not block the engineering implementation of SoM, locating, deterministic Fetch, age tiers, active recall, optional dynamic decay, or DSH context integration.
+
+## 7. Related documents
+
+- [README](../README.en.md): quick start;
+- [DEPLOYMENT](DEPLOYMENT.md): backend deployment and platform validation;
+- [STATUS](STATUS.md): current status;
+- [BENCHMARK](BENCHMARK.md): isolated benchmark;
+- [EXPLORATION](EXPLORATION.md): research and experiment log;
+- [TEST_SPEC](TEST_SPEC.md) / [TEST_REPORT](TEST_REPORT.md): test specification and results.
+

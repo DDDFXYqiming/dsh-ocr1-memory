@@ -56,7 +56,7 @@ Override the needed options in the profile's `cordis.patch.yml`:
     embeddingRetrieval: false      # visual-embedding retrieval; off by default
 ```
 
-Advanced renderer, server-lifecycle, embedding, and strict-locator options are documented in [docs/IMPLEMENTATION.en.md](docs/IMPLEMENTATION.en.md).
+Advanced renderer, server-lifecycle, embedding, and strict-locator options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
 
 ## Installation
 
@@ -71,7 +71,7 @@ The plugin uses OpenAI-compatible endpoints:
 - `/v1/chat/completions` for OCR read-back and optical locating;
 - `/v1/embeddings` for optional multimodal visual embeddings.
 
-Set `ocrBaseUrl` to a compatible service to enable OCR. Without it, the text-based memory path remains available. Backend startup, model formats, and platform notes are in [docs/DEPLOYMENT.en.md](docs/DEPLOYMENT.en.md).
+Set `ocrBaseUrl` to a compatible service to enable OCR. Without it, the text-based memory path remains available. Backend startup, model formats, and platform notes are in [docs_en/DEPLOYMENT.md](docs_en/DEPLOYMENT.md).
 
 ## Reproduction scope
 
@@ -81,17 +81,17 @@ This is an engineering implementation of OCR1 and OCR-Memory ideas, not a claim 
 - ✅ optional real visual embeddings, hit-frequency decay, and DSH `systemPrompt.context()` snapshots;
 - ⚠️ DeepEncoder internal tensors/layer-wise visual tokens, official internal embeddings, and paper-scale evaluation are not fully reproduced here.
 
-See [docs/IMPLEMENTATION.en.md](docs/IMPLEMENTATION.en.md) for the architecture, training/deployment chain, and reproduction matrix.
+See [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md) for the architecture, training/deployment chain, and reproduction matrix.
 
 ## Documentation
 
-- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md): workflow diagrams and implementation boundaries;
-- [IMPLEMENTATION](docs/IMPLEMENTATION.en.md): architecture and paper-reproduction matrix;
-- [DEPLOYMENT](docs/DEPLOYMENT.en.md): backend deployment and validation notes;
-- [STATUS](docs/STATUS.md): implementation status and boundaries;
-- [BENCHMARK](docs/BENCHMARK.md): isolated comparison with `dsh-memory`;
-- [EXPLORATION](docs/EXPLORATION.md): research and experiment notes;
-- [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md): testing documentation.
+- [WORKFLOW](docs_en/OPTICAL_MEMORY_WORKFLOW.md): workflow diagrams and implementation boundaries;
+- [IMPLEMENTATION](docs_en/IMPLEMENTATION.md): architecture and paper-reproduction matrix;
+- [DEPLOYMENT](docs_en/DEPLOYMENT.md): backend deployment and validation notes;
+- [STATUS](docs_en/STATUS.md): implementation status and boundaries;
+- [BENCHMARK](docs_en/BENCHMARK.md): isolated comparison with `dsh-memory`;
+- [EXPLORATION](docs_en/EXPLORATION.md): research and experiment notes;
+- [TEST_SPEC](docs_en/TEST_SPEC.md) / [TEST_REPORT](docs_en/TEST_REPORT.md): testing documentation.
 
 ## References
 

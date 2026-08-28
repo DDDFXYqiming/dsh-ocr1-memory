@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/TEST_SPEC.md)
+
 # Agent 记忆系统测试规范（调研与映射）
 
 > 目标：确认“简单通用的 agent 记忆测试规范”有哪些，并把当前 dsh-ocr1-memory vs dsh-memory 的隔离对比映射到这些规范上。
@@ -24,7 +26,7 @@
 
 ## 2. 当前对比测试映射
 
-`scripts/compare-memory.mjs` 与 `docs/BENCHMARK.md` 中的 R1–R6 对应关系：
+`scripts/compare-memory.mjs` 与 `BENCHMARK.md` 中的 R1–R6 对应关系：
 
 | 任务 | 对应通用规范 | 通过标准 |
 |---|---|---|

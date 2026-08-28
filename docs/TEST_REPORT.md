@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/TEST_REPORT.md)
+
 # dsh-ocr1-memory 测试报告
 
 > 目标：在隔离临时环境中持续测试与修复，直到插件稳定实现 DeepSeek-OCR1（Contexts Optical Compression）的记忆系统效果。
@@ -187,7 +189,7 @@ content: "Orbit API 需要登录并携带 token。"
 
 ## 对比基准：dsh-ocr1-memory vs dsh-memory
 
-- 设计文档：`docs/BENCHMARK.md`
+- 设计文档：`BENCHMARK.md`
 - 执行脚本：`scripts/compare-memory.mjs`
 - 隔离环境：两个临时 store + `--patch` 互斥禁用插件
 - 结果：已用修正后的 `scripts/compare-memory.mjs` 完整重跑 R1–R6；dsh-ocr1-memory 全部 PASS，dsh-memory 本次也全部 PASS（R5 此前手动验证曾 FAIL，行为不稳定）。dsh-ocr1-memory 未出现落后于 dsh-memory 的情况。

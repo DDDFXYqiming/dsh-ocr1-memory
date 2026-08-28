@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/STATUS.md)
+
 # dsh-ocr1-memory 状态总览
 
 快速入口：[README](../README.md) · [实现说明](IMPLEMENTATION.md) · [部署记录](DEPLOYMENT.md) · [基准](BENCHMARK.md) · [测试报告](TEST_REPORT.md)
