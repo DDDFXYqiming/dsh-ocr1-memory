@@ -85,6 +85,7 @@ See [docs/IMPLEMENTATION.en.md](docs/IMPLEMENTATION.en.md) for the architecture,
 
 ## Documentation
 
+- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md): workflow diagrams and implementation boundaries;
 - [IMPLEMENTATION](docs/IMPLEMENTATION.en.md): architecture and paper-reproduction matrix;
 - [DEPLOYMENT](docs/DEPLOYMENT.en.md): backend deployment and validation notes;
 - [STATUS](docs/STATUS.md): implementation status and boundaries;

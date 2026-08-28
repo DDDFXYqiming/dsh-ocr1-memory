@@ -85,6 +85,7 @@ dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
 
 ## 文档
 
+- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图与未实现边界；
 - [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与论文复现矩阵；
 - [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证注意事项；
 - [STATUS](docs/STATUS.md)：当前实现状态与已知边界；
