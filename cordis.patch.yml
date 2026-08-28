@@ -14,6 +14,16 @@
         ocrRepeatPenalty: 1.2
         ocrNoRepeatNgramSize: 30
         ocrTextOnlyPromptTokens: 5
+        opticalLocatorEnabled: false
+        opticalLocatorBaseUrl: ''
+        opticalLocatorApiKey: ''
+        opticalLocatorModel: 'deepseek-ocr-memory'
+        opticalLocatorTimeoutMs: 120000
+        opticalLocatorThreshold: 0.4
+        opticalLocatorTopK: 5
+        opticalLocatorMaxSegments: 20
+        opticalLocatorAlwaysUnionTopK: false
+        opticalLocatorStrict: true
         autoStartOcrServer: false
         ocrEmbeddingBaseUrl: ''
         ocrEmbeddingApiKey: ''
@@ -27,5 +37,5 @@
         ocrEmbeddingIdleTimeoutMs: 300000
         ocrEmbeddingContextSize: 2048
         sharedStore: false
-        embeddingRetrieval: true
+        embeddingRetrieval: false
         ocrMaxEntriesPerRetrieve: 5

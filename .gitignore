@@ -3,3 +3,9 @@ node_modules/
 *.tgz
 .tmp-*/
 scripts/llama-*.log
+docs/papers/
+data/
+scripts/__pycache__/
+unsloth_compiled_cache/
+*.pyc
+.workbuddy/

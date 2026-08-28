@@ -25,15 +25,16 @@
 
 | OCR1 概念 | 本插件实现 |
 |---|---|
-| 长文本 → 光学 2D 映射 | 文本按段落自动分段，渲染为图像 |
-| visual tokens 承载信息 | 分辨率模式对应 OCR1 官方设计：`vivid 1280(≈400) → normal 1024(≈256) → fuzzy 640(≈100)`；会记录接口级视觉 token 数 |
-| 记忆随时间模糊 | 按 `createdAt` 年龄衰减，旧记忆降到低分辨率 |
+| 长文本 → 光学 2D 映射 | 文本按段落自动分段，渲染为方形 SoM 图像（1024²/512²，红色编号框 + 36pt 高对比标签） |
+| visual tokens 承载信息 | 分辨率模式对应 OCR1 官方设计：`vivid 1280(≈400) → normal 1024(≈256) → fuzzy 640(≈100)`；会记录接口级真实视觉 token 数（marker-only 请求实测） |
+| 记忆随时间模糊 | 按 `createdAt` 年龄衰减，旧记忆降到低分辨率（并强制重渲染，旧 OCR 证据失效） |
 | 人类记忆的 vivid-to-fuzzy | 越旧越低清，但保留语义 gist |
 | 记忆刷新 | 命中低清记忆 → active recall 恢复高清，并在一段时间内豁免再衰减 |
-| 避免幻觉 | Locate-and-Transcribe 风格：返回原始 verbatim 片段；当前定位由文本打分 + OCR 证据完成，不是模型直接输出 SoM 编号 |
-| OCR 驱动召回 | 原始 token 未命中但 DeepSeek-OCR 从图像读到关键词 → 仍按 OCR 证据召回并取回原文 |
-| 视觉 embedding | 存储真实 DeepSeek-OCR 1280 维视觉向量（`visualMemory.embedding`）；检索时用 query embedding 与记忆 embedding 的相似度作为主信号，再结合文本分段定位 |
-| 渲染缓存 | AgentOCR 式分段哈希缓存，相同分段集合+分辨率直接复用图像 |
+| Locate-and-Transcribe（本方案） | **光学定位器（OCR-Memory 论文核心）**：用 DeepSeek-OCR + LoRA 微调，对每张 SoM 图输出 K 位 0/1 相关性标签（sigmoid logits），按阈值 0.4 + Top-5 保底选择段；严格模式不接受自由文本输出，宁可报错也不回退到文本打分 |
+| 确定性 Fetch | 定位只给出段索引；返回的永远是原始 verbatim 段落，不做生成式复述 |
+| OCR 证据回溯 | 无定位器时退化为"文本打分 + OCR 读回证据"旧路径（非论文方案，标记为 legacy） |
+| 视觉 embedding | 存储真实 DeepSeek-OCR 1280 维视觉向量（`visualMemory.embedding`）；**默认关闭**作为检索信号（实测未证明跨模态可靠，见下） |
+| 渲染缓存 | AgentOCR 式哈希缓存（v2，square 几何 + sidecar 同步）；分辨率/内容变化自动失效 |
 
 ## 配置
 
@@ -50,6 +51,17 @@
     renderScript: '<插件目录>/scripts/render_memory.py'
     requireOcr: false            # true 时 OCR 不可用会直接报错
     useMockRenderer: false       # true 时跳过 Python 渲染（仅测试）
+    # 论文 Locate 定位器（需微调后的 DeepSeek-OCR+LoRA；未启用时不参与）
+    opticalLocatorEnabled: false       # true 时 retrieve 走"光学定位器先选段"路径
+    opticalLocatorBaseUrl: ''          # 默认回退 ocrBaseUrl（llama-server/vLLM 兼容端点）
+    opticalLocatorApiKey: ''
+    opticalLocatorModel: 'deepseek-ocr-memory'   # 微调后的模型名/合并后模型
+    opticalLocatorTimeoutMs: 120000
+    opticalLocatorThreshold: 0.4       # 论文 tau（p(1) 阈值）
+    opticalLocatorTopK: 5              # 无命中时 Top-K 保底
+    opticalLocatorMaxSegments: 20      # 单次 retrieve 全局段上限
+    opticalLocatorAlwaysUnionTopK: false  # true=论文 Eq.12 字面；false=附录 A（默认，更接近论文意图）
+    opticalLocatorStrict: true         # 定位输出非严格标签即报错，不回退文本打分
     autoStartOcrServer: false    # true 时插件加载后自动确保 llama-server 在线
     ocrServerPath: ''            # llama-server.exe 路径；留空用默认值
     ocrModelDir: ''              # DeepSeek-OCR GGUF 目录；留空用默认值
@@ -68,7 +80,7 @@
     ocrEmbeddingIdleTimeoutMs: 300000  # embedding 服务空闲多少毫秒后自动关闭
     ocrEmbeddingContextSize: 2048      # embedding 服务上下文（不需要长生成，2048 够用）
     sharedStore: false                 # true 时每次操作前重读 memories.json，支持多 Agent 共享同一 store
-    embeddingRetrieval: true           # true 时使用 1280 维视觉 embedding 相似度作为检索主信号（配合 ocrEmbeddingBaseUrl）
+    embeddingRetrieval: false          # 1280 维视觉 embedding 相似度检索（默认关：实测未见跨模态可靠证据）
     ocrMaxEntriesPerRetrieve: 5        # 文本检索不足 topK 时，最多对多少条记忆做 OCR 读回（防止大库检索卡死）
 ```
 
@@ -107,16 +119,22 @@ python -m vllm.entrypoints.openai.api_server \
 
 然后把 `ocrBaseUrl` 配成 `http://127.0.0.1:8000/v1` 即可让检索真正走光学读回路径。
 
-本机 AMD 路线（llama.cpp）：
+本机 AMD 路线（llama.cpp，**运行时只占 CPU/核显**）：
+
+`llama-server` 优先使用 **CPU-only 构建**（`<models>\llama.cpp-cpu\llama-server.exe`，无 Vulkan 后端，不占独显），默认路径解析顺序：`OCR_SERVER_PATH` 环境变量 → CPU 构建（存在时）→ Vulkan 构建（兜底）。插件 `autoStartOcrServer`、`node scripts/ensure-ocr-server.mjs 18080`、`scripts/start-ocr-server.ps1` 三处均遵循该顺序。
 
 ```bash
-# 一键启动/确保 DeepSeek-OCR llama-server 在线
+# 一键启动/确保 DeepSeek-OCR llama-server 在线（自动选 CPU 版）
 node scripts/ensure-ocr-server.mjs 18080
 # 或手动
 powershell -File scripts/start-ocr-server.ps1
+# 显式指定 GPU/Vulkan 版（仅当你要临时提速，会占独显）
+powershell -File scripts/start-ocr-server.ps1 -Server '<models>\llama.cpp\llama-server.exe'
 ```
 
 默认后端地址：`http://127.0.0.1:18080/v1`，模型默认为 `deepseek-ocr-Q4_K_M.gguf`（`DeepSeek-OCR-Q8_0.gguf` 也可通过 `ocrModelDir`/脚本参数覆盖）。
+
+> 实测（2026-08-28）：CPU 版（b10453）prefill ≈49 tok/s、decode ≈80 tok/s，足以支撑检索链路；`Get-Counter '\GPU Engine(*)'` 确认 llama-server 不进入任何 GPU 引擎，dGPU 空闲。
 
 ### 真实视觉 embedding（DeepSeek-OCR embeddings 端点）
 
@@ -127,6 +145,7 @@ llama.cpp 的 `/v1/embeddings` 支持多模态输入（`prompt_string` + `multim
 powershell -File scripts/start-ocr-server.ps1 -Port 18080
 
 # 方式二：手动启动（需 -ub 大于单图视觉 token 数，默认 512 会拒绝大图）
+# 用 CPU 版（不占独显）：<models>\llama.cpp-cpu\llama-server.exe
 llama-server.exe --host 127.0.0.1 --port 18080 --embeddings --pooling mean \
   -m <model_dir>\deepseek-ocr-Q4_K_M.gguf \
   --mmproj <model_dir>\mmproj-deepseek-ocr-q8_0.gguf \
@@ -143,15 +162,18 @@ llama-server.exe --host 127.0.0.1 --port 18080 --embeddings --pooling mean \
    - 论文：DeepEncoder 把文档图像真正压缩成少量 visual tokens，再交给 DeepSeek-3B 解码。
    - 当前：使用 llama.cpp 的 OCR/embeddings 接口做光学读回和视觉向量存储；视觉 token 数来自接口统计，不是 DeepEncoder 内部张量输出。
 
-2. **Locate-and-Transcribe 是工程近似**
-   - 论文/OCR-Memory：模型直接输出 SoM 编号（Locate），再取回原文（Transcribe）。
-   - 当前：定位靠文本 token 重叠打分 + OCR 证据；返回原始 verbatim 片段，避免生成幻觉，但不是“模型输出编号”。
-   - LoRA 微调让模型输出 SoM 编号这部分按目标要求**不做**。
+2. **Locate-and-Transcribe 现在是论文路线**
+   - OCR-Memory：模型直接输出 K 位 0/1 相关性标签（Locate），再确定性取回原文（Transcribe）。
+   - 本仓库已实现：
+     - 纯 JS 端：`parseBinaryRelevance`（从 logprobs 读 0/1 token 概率）→ `selectRelevanceIndices`（tau=0.4 + Top-K 保底）→ `createOcrLocatorHttpClient`（OpenAI 兼容 POST，请求严格 K 位标签）；
+     - `retrieve` 在配置 `opticalLocatorEnabled` 时走**光学优先**路径：先对所有 SoM 图做列表定位，再按段索引取回原始 verbatim（不经过文本打分）；
+     - 训练侧：`scripts/prepare_hotpotqa_locator.py`（HotpotQA distractor → 1024² SoM 渲染 + 0/1 标签 JSONL）+ `scripts/train_locator_unsloth.py`（DeepSeek-OCR + q/k/v/o LoRA r16/α32/dropout0.05，frozen encoder，加权 BCE，30%1024²/70%512² 课程；输入管线复用 vLLM 官方 `DeepseekOCRProcessor`：`input_ids/<image>+pixel_values(1024²全局+640² crops)+images_seq_mask`，监督位置=0/1 单 token(18/19)）；
+     - 训练允许占用独显（RX 7800 XT/ROCm 已验证模型加载与 LoRA attach）；**运行时（llama-server OCR/embedding）默认 CPU-only 构建，不占独显**；
+     - 未启用定位器时保留旧"文本打分 + OCR 证据"路径，并明确标记为 legacy（`locatorStrict: true` 时宁报错不回落）。
 
-3. **视觉 embedding 已作为主检索信号（工程实现）**
-   - 当前 `visualMemory.embedding` 已存储 1280 维真实视觉向量；
-   - 检索时先用 query embedding 与记忆 embedding 的余弦相似度排序记忆，再在命中的记忆内做文本分段定位；
-   - 这比纯文本打分更接近论文“用视觉表示检索”的方向，但仍不是 DeepEncoder 内部压缩。
+3. **视觉 embedding 默认关闭（诚实标注）**
+   - 本机实测 `--pooling mean` 的 1280 维向量跨模态检索区分度不足（query↔真命中与 query↔干扰项余弦差距很小，见本仓库 `docs/EXPLORATION.md` 第 7 节），因此 `embeddingRetrieval` 默认 `false`；
+   - `visualMemory.embedding` 仍存储真实 1280 维向量，但仅当显式开启时作为检索信号，不再默认用。
 
 4. **视觉 token 数是接口级直接测量**
    - 通过 embeddings 端点 marker-only 请求得到 `visualTokensDirect`；
@@ -161,20 +183,20 @@ llama-server.exe --host 127.0.0.1 --port 18080 --embeddings --pooling mean \
 
 - 当前实际需要的服务：
   - `18080`：DeepSeek-OCR combined 服务，同时提供 `/v1/chat/completions`（OCR 读回）和 `/v1/embeddings`（1280 维视觉 embedding / embedding 检索）。
-- 不再需要独立的 `18084`；探索残留的 `18081/18082/18083` 已全部关闭。
+- 不再需要独立的 `18084`；WorkBuddy 时代验证用的 `18081/18082` 计划任务服务已停（定义保留可重注册）。
 - 已验证的推进边界：
-  - 无微调让 DeepSeek-OCR 直接输出 SoM 编号：当前 llama.cpp 后端不可靠（输出无关文本），因此论文原版 Locate 需要 LoRA 才能推进。
-  - DeepEncoder 内部压缩管线 / 内部逐层 visual token 数：当前 llama.cpp 公开接口无法获取。
-  - 多模态 embedding 依赖 llama.cpp 扩展；在 AMD 无 NVIDIA/vLLM 环境下无法切换到官方 DeepEncoder 输出。
+  - **LoRA 微调已在本机实跑并量化验证**：WSL2 `/root/ocr1-train-env`（torch 2.11.0+rocm7.2 + transformers 4.57.2 + unsloth）加载 `unsloth/DeepSeek-OCR`（4-bit QLoRA），q/k/v/o r16/α32 adapter 落盘。独立 12 条 HotpotQA 评估：base exact 0/12、mean F1=0.139；300 条×3 epochs LoRA exact 1/12、mean F1=0.375（约 2.7×）；单样本过拟合达到 exact 1/1、F1=1.0。输入严格按官方格式：`images=[(patches, global_view)]` + `<image>` id128815 + `images_seq_mask`，监督=target 区间内 0/1 单 token(id18/19)。关键修复：`\n` 计入 prompt 长度、EOS 不监督、生成遵循 `digit space ...` 语法、w+=4 类别平衡、正确梯度累积；`scripts/verify_collator_alignment.py` 固化对齐自测。
+  - 无微调让 DeepSeek-OCR 直接输出 SoM 编号：llama.cpp 后端不可靠（输出无关文本），实测确认，**论文原版 Locate 必须经过 LoRA 训练**。
+  - DeepEncoder 内部压缩管线 / 内部逐层 visual token 数：llama.cpp 公开接口无法获取；transformers 路线可直接加载 DeepEncoder（本仓库训练脚本即用 AutoModel 全模型加载）。
 - 后续可推进条件：
-  - 若允许 LoRA 微调：可补上“模型输出 SoM 编号”的 Locate 能力。
-  - 若具备 NVIDIA/vLLM 环境：可进一步对齐 DeepEncoder 内部压缩、内部 visual token 输出和官方多模态 embedding。
+  - **训练 Locate LoRA**：用 `scripts/prepare_hotpotqa_locator.py` 生成数据集 → `scripts/train_locator_unsloth.py` 训练 → 合并/部署到 llama-server 或 vLLM → 配置 `opticalLocatorEnabled: true` 即全程论文路线。
+  - DeepEncoder 内部逐层输出 / 官方多模态 embedding：需要 NVIDIA/vLLM 或直接用 transformers 加载官方权重做逐层钩子（训练脚本已基于该路线）。
 
 ## 开发与测试
 
 ```bash
 npm run build        # node --check
-npm test             # 47 项测试（含复杂隔离测试 + 真实 OCR/embedding + robustness，若后端在线）
+npm test             # 全部测试（含 locator/render-geometry 新增项；真实 OCR/embedding 若后端在线则跳过与否取决于运行）
 npm run test:smoke   # 本地端到端冒烟（真实 Python 渲染 + mock OCR）
 node scripts/compare-memory.mjs  # 对比 dsh-ocr1-memory vs dsh-memory（隔离临时环境）
 dsh --profile headless --dump-config   # 检查插件层已装配
@@ -182,7 +204,7 @@ dsh --profile headless --dump-config   # 检查插件层已装配
 
 ## 测试与对比结果
 
-- `npm test`：**47/47 通过**。
+- `npm test`：**57/57 通过**（2026-08-28，含定位器 L1–L8 与渲染几何 RG1–RG2；真实 OCR/embedding 项在 Windows 原生 18080 服务上实测通过）。
 - Robustness：多 Agent 共享 store、图像缺失/缓存损坏恢复、超长输入边界均通过。
 - 对比基准（`scripts/compare-memory.mjs`，隔离 headless + 官方原装 DSH）：
   - dsh-ocr1-memory：R1–R6 全部 PASS。
@@ -191,17 +213,20 @@ dsh --profile headless --dump-config   # 检查插件层已装配
 
 ## Roadmap
 
-- [ ] LoRA 微调 DeepSeek-OCR decoder 做 SoM 检索（OCR-Memory 方案），把检索真正变成“模型输出编号”而非文本打分
+- [x] OCR-Memory 光学定位器管线（`parseBinaryRelevance` / `selectRelevanceIndices` / `createOcrLocatorHttpClient` / 光学优先 retrieve；配置 `opticalLocatorEnabled`）
+- [x] HotpotQA locator 训练数据集脚本（`scripts/prepare_hotpotqa_locator.py`）
+- [x] DeepSeek-OCR+LoRA 训练/eval（`train_locator_unsloth.py` / `eval_locator.py` / `verify_collator_alignment.py`；RX 7800 XT ROCm 实测 base F1 0.139 → LoRA 0.375，单样本 F1 1.0）
 - [x] AgentOCR 式 segment optical caching（哈希分段缓存，降低渲染成本；已实现 `.render-cache` 复用）
 - [x] 压缩比指标与 OCR 文本基线校准（`ocr1_mem_metrics` / `ocr1_mem_calibrate`）
 - [x] 显式记忆更新（`ocr1_mem_update`，冲突消解）
 - [x] 自动确保 OCR 服务在线（`autoStartOcrServer`）
 - [x] 对比 dsh-memory 的隔离基准（R1–R6 已用修正后脚本完整重跑；dsh-ocr1-memory 全部 PASS）
-- [x] 真实 DeepSeek-OCR 视觉 embedding 存储（1280 维，`visualMemory.embedding`）
+- [x] 真实 DeepSeek-OCR 视觉 embedding 存储（1280 维，`visualMemory.embedding`；默认关闭检索）
 - [x] 直接视觉 token 测量（embeddings 端点 marker-only 请求，`visualMemory.visualTokensDirect`）
 - [x] 多 Agent 共享 store（`sharedStore` + reload + 原子保存）
 - [x] 图像缺失 / 渲染缓存损坏自动恢复
 - [x] 超长输入边界测试
+- [x] LoRA 训练后把 adpater 合并回 DeepSeek-OCR 并部署到 llama-server/vLLM（全链路端到端定位验证；**2026-08-28 完成**：LoRA → Q8_0 merged GGUF → Windows 原生 llama-server 18080 → DSH 定位器真实选段，10 段 SoM 定位命中目标段，HotpotQA 未见样本 mean F1=0.333）
 - [ ] 记忆命中热度驱动的动态衰减策略
 - [ ] 自动注入 `/context` 让 Agent 每轮看到记忆摘要
 

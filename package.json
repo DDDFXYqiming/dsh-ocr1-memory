@@ -46,7 +46,7 @@
   "scripts": {
     "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/ocr-server.js",
     "typecheck": "node --check lib/index.js",
-    "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs",
+    "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs test/locator.test.mjs test/render-geometry.test.mjs",
     "test:smoke": "node scripts/smoke.mjs"
   },
   "peerDependencies": {

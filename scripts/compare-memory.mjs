@@ -98,7 +98,9 @@ async function main() {
 
   const results = []
   for (const task of TASKS) {
-    const prompt = task.prompt(task.fact, task.factNew)
+    const prompt = task.id === 'R4'
+      ? task.prompt(task.factOld, task.factNew)
+      : task.prompt(task.fact)
     for (const [label, patch] of [['ocr1', patchA], ['memory', patchB]]) {
       const t0 = Date.now()
       try {

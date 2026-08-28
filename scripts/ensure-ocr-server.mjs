@@ -8,7 +8,12 @@ const SERVER_PATH = process.argv[4] || process.env.OCR_SERVER_PATH || ''
 const BASE = `http://127.0.0.1:${PORT}/v1`
 
 try {
-  const result = await ensureOcrServer({ baseUrl: BASE, modelDir: MODEL_DIR, port: PORT, serverPath: SERVER_PATH })
+  const options = { baseUrl: BASE, port: PORT }
+  // Do not pass empty strings: they would override ensureOcrServer's tested
+  // Windows defaults and make the documented one-argument command fail.
+  if (MODEL_DIR) options.modelDir = MODEL_DIR
+  if (SERVER_PATH) options.serverPath = SERVER_PATH
+  const result = await ensureOcrServer(options)
   if (result.started) {
     console.log(`OCR server started: ${BASE}`)
   } else {

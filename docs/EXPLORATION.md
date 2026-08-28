@@ -106,6 +106,40 @@
 - 已将视觉 embedding 相似度作为**主检索信号**：`measureTextEmbedding` 嵌入查询，`retrieveSegmentsWithEmbeddings` 先按余弦相似度排序记忆，再在命中记忆内做文本分段定位。
 - 已调研通用 agent 记忆测试规范（MemoryAgentBench / LongMemEval / LoCoMo / AMB），并整理成 `docs/TEST_SPEC.md`；R1–R6 与这些规范一一映射。
 - 尝试“无微调让 DeepSeek-OCR 直接输出 SoM 编号”的实验：当前 llama.cpp 后端在自定义 locate prompt 下输出不可靠（返回无关文本而非编号），因此在不做 LoRA 的前提下，论文原版 Locate（模型输出编号）不可推进。
-- 距离“完全复现 OCR1 论文效果”仍缺：
-  - DeepEncoder 内部逐层输出的纯 visual token 数量（当前使用 llama.cpp token 统计，属于接口级直接测量）
-  - LoRA 微调 DeepSeek-OCR 做 SoM 编号检索（按目标要求不做）
+
+## 9. LoRA 光学定位器：本机实跑推进（2026-08）
+
+### 9.1 环境与工具链（WSL2 / RX 7800 XT / ROCm）
+
+- 独立训练 venv `/root/ocr1-train-env`：torch 2.11.0+rocm7.2 + torchvision 0.26.0+rocm7.2 + transformers 4.57.2 + trl 0.24 + unsloth 2026.8.22 + bitsandbytes 0.50 + datasets 5.0.1。
+- 关键坑（详见记忆 SOP）：
+  - WSL 必须删除 PyTorch wheel 自带 `torch/lib/libhsa-runtime64.so*` 才见 GPU（否则 `get_device_capability` 为 None）；
+  - transformers ≥5 与 DeepSeek-OCR 旧 remote code 不兼容（strict dataclass `kv_lora_rank=None`、`DeepseekV2Moe/MoE` 命名差），须用 4.57.x + MoE 别名补丁；
+  - Unsloth `UnslothVisionDataCollator` 只支持带 `image_processor` 的模型，DeepSeek-OCR 没有 → 自写 collator。
+
+### 9.2 训练输入（官方格式，来自 HF remote code 与 vLLM processor）
+
+- `images=[(patches, global_view)]`，`global_view=(1,3,1024,1024)` 归一化，`patches` 空时为 `(0,3,640,640)`；配 `images_seq_mask`（`<image>` id 128815 处 True）、`images_spatial_crop=[[1,1]]`。
+- tokenizer 单 token 监督：`0`→18、`1`→19；只监督 target 区间（prompt/image/space/EOS 均为 -100）。HotpotQA 每样本约 2 正/8 负，代码默认 `w+=4,w-=1` 做频率平衡（论文仅披露 `w+>w-`，未给具体值）。
+- 生成必须遵循训练语法 `digit space digit ... digit EOS`；若强制只允许 0/1 而禁空格，autoregressive 上下文会立即漂移。
+
+### 9.3 实证结果（2026-08-28）
+
+训练集 300 条（seed=7）与评估集 30 条（seed=42）ID 零重叠。评估严格使用同一语法约束；下表为前 12 条独立评估样本：
+
+| 阶段 | 配置 | 结果 |
+|---|---|---|
+| base（无 LoRA） | 相同二元语法约束 | exact 0/12，mean F1 **0.139** |
+| LoRA 中间里程碑 | 300 条×3 epochs，lr 1e-4，旧 w+=2 | exact 1/12，mean F1 **0.375** |
+| 单样本过拟合 | 100 steps，lr 1e-3，w+=4 | exact 1/1，F1 **1.000**；15 步后 loss≈0 |
+
+结论：完整训练/视觉/监督/自回归解码闭环成立；300 条 LoRA 相比 base 的 mean F1 约 **2.7×**。当前默认代码已进一步修正：target 对齐自测、EOS 不监督、空格语法约束、w+=4 类别平衡、正确梯度累积。尚未宣称复现论文主表，因论文使用更大 HotpotQA 训练规模及 Mind2Web/AppWorld/RULER 等评测。
+
+### 9.4 运行时与训练分离
+
+- **训练**：WSL ROCm，允许占用独显（本次验证耗时数分钟至 1 小时级）。
+- **运行时（检索）**：llama-server 默认用 **CPU-only 构建**（`<models>\llama.cpp-cpu\`），不占独显；已实测 CPU 版 OCR/embedding 端到端可用，DSH 隔离 headless 用官方 V4 Flash 验证通过。
+- 距离论文主表级完整复现仍缺：
+  - DeepEncoder 内部逐层输出的纯 visual token 数量（当前 llama.cpp 运行时仅有接口统计）；
+  - 按论文真实训练规模跑满 HotpotQA，并复现 Mind2Web/AppWorld/RULER/Mind2Web retrieval subset 指标；
+  - 将 LoRA 合并/量化为 CPU 可运行的 GGUF，并接入 `opticalLocatorEnabled` 做 DSH 端到端 Locate 工具验证。
