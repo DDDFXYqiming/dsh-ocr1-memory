@@ -1,5 +1,3 @@
-[简体中文] | [English](../docs_en/OPTICAL_MEMORY_WORKFLOW.md)
-
 # 光学记忆插件工作流程与未实现边界
 
 > 本文是对插件工作流程和当前复现边界的说明。

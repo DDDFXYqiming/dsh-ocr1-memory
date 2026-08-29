@@ -1,4 +1,4 @@
-简体中文 | [English](../docs_en/IMPLEMENTATION.md)
+简体中文 | [English](IMPLEMENTATION.en.md)
 
 # 实现说明（Implementation & Reproduction Status）
 
@@ -125,7 +125,7 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 
 ## 7. 相关文档
 
-- [README.md](../README.md)：快速入口；
+- [README.md](../README.md) / [README.en.md](../README.en.md)：快速入口；
 - [DEPLOYMENT.md](DEPLOYMENT.md)：后端部署与平台验证记录；
 - [STATUS.md](STATUS.md)：当前状态；
 - [BENCHMARK.md](BENCHMARK.md)：隔离基准；
