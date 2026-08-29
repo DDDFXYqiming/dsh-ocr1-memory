@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/STATUS.md)
+
 # dsh-ocr1-memory 状态总览
 
 快速入口：[README](../README.md) · [实现说明](IMPLEMENTATION.md) · [部署记录](DEPLOYMENT.md) · [基准](BENCHMARK.md) · [测试报告](TEST_REPORT.md)
@@ -6,15 +8,16 @@
 
 | 项目 | 状态 |
 |---|---|
-| DSH 插件 | ✅ 可安装并注册 `ocr1_mem_*` 工具 |
+| DSH 插件 | ✅ 可安装并注册 OCR1 光学工具与治理工具 |
 | 基础记忆链 | ✅ SoM 渲染、年龄 tier、缓存、OCR 读回、verbatim Fetch |
 | Locate-and-Transcribe | ✅ 严格 K 位定位器链；需要兼容的已训练模型 |
 | Active recall | ✅ 低清命中后恢复 vivid |
 | 命中热度动态衰减 | ✅ 已实现；`dynamicDecayEnabled` 默认关闭 |
-| 每轮 context 快照 | ✅ 已实现；`autoInjectContext` 默认关闭 |
+| 每轮 context | ✅ 默认注入 L1/光学元数据；`contextMode: snapshot` 保留正文快照 |
 | 视觉 embedding | ✅ 可保存真实向量；主检索默认关闭 |
 | 共享 store | ✅ 可选 reload + 原子保存 |
-| 测试 | ✅ `npm test` 70/70 通过 |
+| 治理接线 | ✅ runtime skill、L1、pending、turn/end 维护、阈值提醒与 OCR1 同实例同步 |
+| 测试 | ✅ `npm test` 81/81 通过 |
 
 ## 工具
 
@@ -28,6 +31,10 @@
 - `ocr1_mem_forget`
 - `ocr1_mem_render_test`
 - `ocr1_mem_embed_test`
+- `memory_read` / `memory_list` / `memory_write` / `memory_retrieve`
+- `memory_search` / `memory_index` / `memory_pending` / `memory_accept`
+- `memory_update` / `memory_archive` / `memory_rollback` / `memory_promote`
+- `memory_stats` / `memory_maintain` / `memory_expand` / `memory_activate`
 
 ## 已实现功能
 
@@ -37,23 +44,24 @@
 - LoRA 光学定位器的请求解析、概率选择、阈值/Top-K 规则和 GBNF 严格模式；
 - Locate 后按段索引返回原始 verbatim 文本；
 - active recall、命中次数、有限访问历史与可选动态衰减；
-- `systemPrompt.context()` 同步快照注入，带条目数和字符数上限，不在 provider 内调用模型；
+- `systemPrompt.context()` 同步注入 L1 与光学元数据，带条目数和字符数上限；`snapshot` 模式仍提供正文快照，不在 provider 内调用模型；
 - 渲染缓存、并发锁、原子 manifest、多 Agent 共享和损坏产物恢复；
-- 分层治理适配器中的 namespace、evidence、provenance、pending、archive 和 rollback。
+- 集成治理层中的 namespace、evidence、provenance、pending、archive、rollback、全文搜索和跨 namespace 提升；治理写入与 OCR1 store 使用同一实例。
 
 ## 测试覆盖
 
 | 套件 | 数量 |
 |---|---:|
-| 核心与 context 单元测试 | 14 |
+| 核心与 context 单元测试 | 19 |
 | 复杂隔离测试 T1–T24 | 24 |
-| OCR HTTP / 渲染缓存 / 服务生命周期 | 4 |
+| OCR HTTP / 服务生命周期 | 4 |
 | Embedding 测试 E1–E5 | 5 |
 | 定位器测试 L1–L8 | 8 |
-| 治理层与取消信号测试 | 7 |
+| 治理层与取消信号测试 | 11 |
+| 集成接线与自动治理测试 | 2 |
 | 渲染几何 RG1–RG2 | 2 |
 | Robustness M1–M6 | 6 |
-| **合计** | **70** |
+| **合计** | **81** |
 
 真实 OCR、embedding 和渲染依赖后端与 Python 环境；没有后端时，相关测试应显式使用 mock 或按部署清单执行。
 

@@ -1,4 +1,4 @@
-简体中文 | [English](IMPLEMENTATION.en.md)
+简体中文 | [English](../docs_en/IMPLEMENTATION.md)
 
 # 实现说明（Implementation & Reproduction Status）
 
@@ -9,9 +9,10 @@
 | 层 | 代码 | 职责 |
 |---|---|---|
 | 光学记忆引擎 | `lib/core.js` | 分段、SoM 渲染调度、层级衰减、检索、定位器、缓存与并发保存 |
-| DSH 入口 | `lib/index.js` | 配置解析、OCR/embedding 客户端、服务生命周期和 `ocr1_mem_*` 工具注册 |
-| context 快照 | `lib/context.js` | 从持久化 manifest 同步生成限长的 prompt context，不调用模型 |
-| 分层治理适配器 | `lib/memory-system.js`、`lib/governance.js` | L1/L2/L3 记忆、命名空间、证据与溯源、可选光学表示 |
+| DSH 入口 | `lib/index.js` | 配置解析、OCR/embedding 客户端、服务生命周期、OCR1 工具和治理工具注册 |
+| context / L1 | `lib/context.js` | 同步生成限长的 L1/光学元数据 context，或兼容正文快照；不调用模型 |
+| 分层治理适配器 | `lib/memory-system.js`、`lib/governance.js` | L1/L2/L3 记忆、命名空间、证据与溯源，并通过同一 OCR1 store 持久化光学表示 |
+| 自动治理 | `lib/automation.js`、`lib/skill-content.js` | runtime skill、失败后成功 pending、turn/end 维护和阈值提醒 |
 | 渲染器 | `scripts/render_memory.py` | 方形 SoM 图像、编号标签、CJK 字体与长文本布局 |
 | 训练辅助 | `scripts/prepare_hotpotqa_locator.py`、`train_locator_unsloth.py`、`eval_locator.py` | 定位数据、LoRA 训练、评估和 collator 对齐检查 |
 
@@ -53,14 +54,26 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 
 ### 2.4 每轮 context 快照
 
-`autoInjectContext` 开启后，入口通过 DSH `systemPrompt.context()` 注册名为 `ocr1-memory:context` 的动态贡献。provider 每次 prompt assemble 同步读取 manifest，按命中数和最近访问时间排序，压缩段落文本，并受 `contextMaxEntries` 与 `contextMaxChars` 限制。
+`autoInjectContext` 开启后，入口通过 DSH `systemPrompt.context()` 注册动态贡献。默认 `contextMode: index` 注入当前 namespace 的 L1 定位索引和光学 manifest 元数据（id、source、tier、segments、hits），不注入正文；`contextMode: snapshot` 注册兼容的正文快照 `ocr1-memory:context`。
 
-该 provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifest 损坏时返回空字符串，不阻断 prompt 组装。由于快照会进入模型上下文和会话记录，默认关闭，启用前应确认记忆内容适合暴露给 Agent。
+provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifest 或索引损坏时返回空字符串，不阻断 prompt 组装。详细内容通过治理读取/检索工具按需 Fetch。
+
+### 2.5 治理自动化
+
+`lib/automation.js` 复用旧 layered-memory 的事件策略：记录同一工具的失败后成功序列，在 `session/event` 的 `turn/end` 写入 pending 候选；持久化 namespace 级 `turn-state.json`，按 `maintainEveryTurns` 执行维护，并在 pending、SOP 或 L1 超阈值且冷却结束后向 Agent 注入整理提醒。自动化不会直接把候选提升为正式记忆，正式写入仍由 `memory_accept`/`memory_write` 提供 evidence。
 
 ## 3. 配置要点
 
 | 选项 | 默认 | 说明 |
 |---|---:|---|
+| `memoryDir` | `~/.dsh/memory` | 治理控制面根目录；按 namespace 保存 L1/L2/L3、pending 与 history |
+| `maxIndexLines` | `30` | L1 索引最大行数 |
+| `defaultNamespace` | 空 | 未启用自动命名空间时使用的名称 |
+| `autoNamespace` | `true` | 从 workspace/git 上下文解析 namespace |
+| `autoPending` | `true` | 是否从失败后成功序列生成 pending |
+| `maintainEveryTurns` | `20` | 持久 turn 计数触发维护的周期；0 表示关闭 |
+| `reflectPendingThreshold` | `5` | pending 阈值提醒 |
+| `reflectSopsThreshold` | `40` | 活跃 SOP 阈值提醒 |
 | `ocrBaseUrl` | 空 | OpenAI 兼容的 `/v1/chat/completions` 地址 |
 | `requireOcr` | `false` | OCR 不可用时是否直接失败 |
 | `opticalLocatorEnabled` | `false` | 是否走训练后的光学定位路径 |
@@ -72,7 +85,8 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 | `decayRecencyHalfLifeMs` | 14 天 | 最近一次访问的权重半衰期 |
 | `decayHitWeight` | `1` | 热度对倍率的权重 |
 | `decayMaxMultiplier` | `4` | 有效年龄倍率上限 |
-| `autoInjectContext` | `false` | 是否每轮注入限长摘要 |
+| `autoInjectContext` | `true` | 是否每轮注入限长 context |
+| `contextMode` | `index` | `index` 注入 L1/光学元数据；`snapshot` 注入兼容正文快照 |
 | `contextMaxEntries` | `5` | 摘要最多包含的记忆条目 |
 | `contextMaxChars` | `4000` | 摘要最大字符数 |
 | `sharedStore` | `false` | 是否每次操作前重载 manifest |
@@ -110,7 +124,7 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 | hit-frequency decay | 有上限、可选、向后兼容的近期命中热度策略 | 已实现（默认关闭） |
 | active recall | 命中低清图像后恢复 vivid | 已实现 |
 | 阈值与 Top-K | 默认阈值 + 无命中保底，可切换 union 规则 | 已实现 |
-| 每轮记忆 context | DSH `systemPrompt.context()` 限长快照 | 已实现（默认关闭） |
+| 每轮记忆 context | L1/光学元数据，兼容正文快照可选 | 已实现（默认开启） |
 
 ## 6. 明确边界
 
@@ -125,7 +139,7 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 
 ## 7. 相关文档
 
-- [README.md](../README.md) / [README.en.md](../README.en.md)：快速入口；
+- [README.md](../README.md)：快速入口；
 - [DEPLOYMENT.md](DEPLOYMENT.md)：后端部署与平台验证记录；
 - [STATUS.md](STATUS.md)：当前状态；
 - [BENCHMARK.md](BENCHMARK.md)：隔离基准；

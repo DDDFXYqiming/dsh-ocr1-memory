@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/TEST_REPORT.md)
+
 # dsh-ocr1-memory 测试报告
 
 > 目标：在隔离临时环境中持续测试与修复，直到插件稳定实现 DeepSeek-OCR1（Contexts Optical Compression）的记忆系统效果。
@@ -18,15 +20,16 @@
 
 | 套件 | 结果 |
 |---|---|
-| `npm test`（已固化） | 70/70 通过 |
-| 核心与 context 单元测试 | 14/14 通过 |
+| `npm test`（已固化） | 81/81 通过 |
+| 核心与 context 单元测试 | 19/19 通过 |
 | 复杂隔离测试（T1–T24） | 24/24 通过 |
 | OCR HTTP / 渲染缓存测试 | 2/2 通过 |
 | Embedding 测试（E1–E5） | 5/5 通过 |
 | 定位器测试（L1–L8） | 8/8 通过 |
-| 治理层与取消信号测试 | 7/7 通过 |
+| 治理层与取消信号测试 | 11/11 通过 |
 | 渲染几何测试（RG1–RG2） | 2/2 通过 |
 | OCR server 生命周期测试 | 2/2 通过 |
+| 集成接线与自动治理测试 | 2/2 通过 |
 | Robustness 测试（M1–M6） | 6/6 通过 |
 | 真实 OCR / Embedding 隔离测试 | PASS（T6/T15/T16/T21/T23/T24/E4，依赖 llama-server） |
 
@@ -187,7 +190,7 @@ content: "Orbit API 需要登录并携带 token。"
 
 ## 对比基准：dsh-ocr1-memory vs dsh-memory
 
-- 设计文档：`docs/BENCHMARK.md`
+- 设计文档：`BENCHMARK.md`
 - 执行脚本：`scripts/compare-memory.mjs`
 - 隔离环境：两个临时 store + `--patch` 互斥禁用插件
 - 结果：已用修正后的 `scripts/compare-memory.mjs` 完整重跑 R1–R6；dsh-ocr1-memory 全部 PASS，dsh-memory 本次也全部 PASS（R5 此前手动验证曾 FAIL，行为不稳定）。dsh-ocr1-memory 未出现落后于 dsh-memory 的情况。
@@ -204,7 +207,7 @@ content: "Orbit API 需要登录并携带 token。"
 - [x] LoRA 定位器训练/评估脚本与合并部署链：详见 `docs/DEPLOYMENT.md`
 - [x] 直接视觉 token 数：通过 embeddings 端点 marker-only 请求测量（`visualMemory.visualTokensDirect`）
 - [x] 命中频率动态衰减（默认关闭，保留旧库行为）
-- [x] 可选 `systemPrompt.context()` 记忆摘要注入（默认关闭）
+- [x] 可选 `systemPrompt.context()` 记忆摘要注入（L1/光学元数据默认开启；`snapshot` 正文快照需显式开启）
 - [ ] 论文规模训练与完整主表评测
 - [ ] DeepEncoder 内部逐层 token/embedding 导出
 

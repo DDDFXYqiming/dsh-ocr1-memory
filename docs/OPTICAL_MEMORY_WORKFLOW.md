@@ -1,3 +1,5 @@
+[简体中文] | [English](../docs_en/OPTICAL_MEMORY_WORKFLOW.md)
+
 # 光学记忆插件工作流程与未实现边界
 
 > 本文是对插件工作流程和当前复现边界的说明。
@@ -118,7 +120,7 @@ flowchart TD
 - 不执行 OCR、embedding、网络请求或异步检索；
 - manifest 损坏时返回空内容，不阻断 Prompt 组装。
 
-这条链路是“自动提供少量记忆摘要”，不是替代完整的 `ocr1_mem_retrieve`。默认关闭，因为自动注入的内容会进入模型上下文和会话记录。
+这条链路是“自动提供少量记忆摘要”，不是替代完整的 `ocr1_mem_retrieve`。默认 `contextMode: index` 只注入 L1/光学元数据（不进正文）；`contextMode: snapshot` 才使用本链路的正文摘要——正文会占用更多模型上下文和会话记录，需要显式开启。
 
 ## 7. 当前没有完整实现的部分
 

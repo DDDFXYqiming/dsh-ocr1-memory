@@ -1,4 +1,4 @@
-简体中文 | [English](DEPLOYMENT.en.md)
+简体中文 | [English](../docs_en/DEPLOYMENT.md)
 
 # 部署与验证记录（Deployment Notes）
 

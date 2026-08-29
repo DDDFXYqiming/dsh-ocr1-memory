@@ -4,9 +4,7 @@
 
 基于 **DeepSeek-OCR: Contexts Optical Compression**（OCR1）思想的 DSH 光学记忆插件。
 
-> 这是 DSH plugin，不是 agent skill；仓库不需要 `SKILL.md`。
-
-文本记忆会被按段落渲染为带 SoM 编号的图像，旧记忆按年龄降低分辨率；检索时可由光学定位器选择相关段，再确定性地返回原始 verbatim 文本。这样既保留视觉压缩路径，也避免生成式复述带来的幻觉。
+文本记忆会被按段落渲染为带 SoM 编号的图像，旧记忆按年龄降低分辨率；检索时可由光学定位器选择相关段，再确定性地返回原始 verbatim 文本。
 
 ## 能力
 
@@ -22,6 +20,11 @@
 | `ocr1_mem_forget` | 删除记忆及其光学产物 |
 | `ocr1_mem_render_test` | 渲染管线自测 |
 | `ocr1_mem_embed_test` | 视觉 embedding 自测 |
+| `memory_read` / `memory_retrieve` | 读取 L1/L2/L3，并优先走 OCR1 光学召回 |
+| `memory_write` / `memory_update` | 带 evidence 的治理写入，自动同步 OCR1 SoM |
+| `memory_search` / `memory_promote` | 全文检索与跨 namespace 提升 |
+| `memory_pending` / `memory_accept` | 审阅自动蒸馏候选并确认入库 |
+| `memory_maintain` / `memory_stats` | 去重、L1 压缩、统计与光学状态 |
 
 ## 工作方式
 
@@ -30,6 +33,8 @@
 3. 配置光学定位器后，模型输出 K 位 `0/1` 标签，插件按阈值和 Top-K 规则选择段。
 4. Fetch 阶段只从持久化原文取回选中段，不生成替代文本。
 5. 视觉 embedding、命中热度衰减和每轮 context 注入都是可选能力。
+6. 治理工具和 OCR1 store 使用同一插件实例；默认每轮只注入 L1/光学元数据，详细正文按需 Fetch，历史 context 快照可通过 `contextMode: snapshot` 保留。
+7. `tools/result` 的失败后成功序列会在 `turn/end` 生成 pending；达到维护周期或阈值时自动维护/提醒，正式记忆仍由带 evidence 的治理写入确认。
 
 ## 配置
 
@@ -39,24 +44,32 @@
 - id: dsh-ocr1-memory
   config:
     storeDir: ''
-    ocrBaseUrl: ''                 # OpenAI 兼容 /v1/chat/completions；留空可使用文本路径
+    memoryDir: '~/.dsh/memory'
+    maxIndexLines: 30
+    autoNamespace: true
+    autoPending: true
+    maintainEveryTurns: 20
+    reflectPendingThreshold: 5
+    reflectSopsThreshold: 40
+    ocrBaseUrl: ''
     ocrApiKey: ''
     ocrModel: 'deepseek-ai/DeepSeek-OCR'
     requireOcr: false
-    opticalLocatorEnabled: false   # 需要已训练的定位器模型
+    opticalLocatorEnabled: false
     opticalLocatorBaseUrl: ''
     opticalLocatorModel: 'deepseek-ocr-memory'
     opticalLocatorThreshold: 0.4
     opticalLocatorTopK: 5
-    dynamicDecayEnabled: false     # 按近期命中频率延缓层级衰减；升级兼容，默认关闭
-    autoInjectContext: false       # 每次 prompt assemble 注入限长记忆摘要；默认关闭
+    dynamicDecayEnabled: false
+    autoInjectContext: true
+    contextMode: 'index' # 改为 snapshot 可保留正文快照
     contextMaxEntries: 5
     contextMaxChars: 4000
     sharedStore: false
-    embeddingRetrieval: false      # 视觉 embedding 检索，默认关闭
+    embeddingRetrieval: false
 ```
 
-未列出的高级选项（渲染器、服务生命周期、embedding、定位器严格模式等）见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+高级选项见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 安装
 
@@ -71,24 +84,14 @@ dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
 - `/v1/chat/completions`：OCR 读回和光学定位；
 - `/v1/embeddings`：可选的多模态视觉 embedding。
 
-将 `ocrBaseUrl` 指向兼容服务即可启用 OCR；未配置时仍可使用不依赖 OCR 的文本记忆路径。后端启动、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
-
-## 复现范围
-
-这是对 OCR1 和 OCR-Memory 思想的工程实现，不宣称复刻模型内部机制或论文主表：
-
-- ✅ SoM、年龄分辨率、active recall、Locate-and-Transcribe、严格 K-bit 定位链；
-- ✅ 可选真实视觉 embedding、命中频率动态衰减、DSH `systemPrompt.context()` 摘要注入；
-- ⚠️ DeepEncoder 内部张量/逐层 visual token、官方内部 embedding 和论文规模评测不在本插件内完整复现。
-
-详细架构、训练/部署链和逐项对照见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+配置 `ocrBaseUrl` 后即可启用 OCR。后端启动、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 文档
 
-- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图与未实现边界；
-- [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与论文复现矩阵；
-- [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证注意事项；
-- [STATUS](docs/STATUS.md)：当前实现状态与已知边界；
+- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图；
+- [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与实现说明；
+- [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证；
+- [STATUS](docs/STATUS.md)：当前实现状态；
 - [BENCHMARK](docs/BENCHMARK.md)：与 `dsh-memory` 的隔离对比；
 - [EXPLORATION](docs/EXPLORATION.md)：研究与实测记录；
 - [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md)：测试说明与报告。

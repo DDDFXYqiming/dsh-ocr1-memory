@@ -6,9 +6,24 @@
 - Optional hit-frequency decay with bounded `accessHistory` and injected-clock support.
 - Optional `systemPrompt.context()` memory snapshots with entry/character limits.
 - `docs/DEPLOYMENT.md` for backend and platform-specific deployment notes.
+- Layered governance integration (`memory_*` tools): namespaces, evidence-gated writes, L1 index, pending distillation, archive/rollback/promote, full-text and optical hybrid retrieval.
+- Runtime `memory` skill registered through `ctx.skills`.
+- Automatic governance: failure-then-success retry sequences become pending candidates at `turn/end`; persisted `turn-state.json`; periodic `maintain()`; threshold-based reflection reminders.
+- OCR↔governance sync: governance writes render into the OCR1 SoM store; update keeps `.history`; archive/promote mark the optical entry `archived`; cross-namespace `syncOpticalUpdate`/`archiveOptical`.
+- L1/optical metadata injected per turn by default (`contextMode: index`); `snapshot` mode remains available.
+- `scripts/build.sh` for plain-JS plugin build (syntax check + profile junction self-heal).
+- `scripts/migrate-all-from-dsh-memory.mjs` to import legacy layered-memory content.
+- English docs under `docs_en/` (STATUS, IMPLEMENTATION, TEST_REPORT, WORKFLOW, BENCHMARK, EXPLORATION, TEST_SPEC, DEPLOYMENT).
+
+### Changed
+- `autoInjectContext` defaults to `true` (schema and resolved config; `contextMode` defaults to `index`).
+- Root `memoryDir` is only `mkdir`'d — it is no longer seeded as a phantom default namespace; the resolved namespace gets the full layout.
+- `memory_write` rejects control characters in `topic` to keep the L1/prompt injection surface clean.
+- OCR server auto-start timers and managed PID are tracked and cleaned up on dispose.
+- Sanity: all 9 modules checked via `node --check` in `npm run build`.
 
 ### Tests
-- `npm test`: 70/70 passing, including dynamic decay, context snapshots, governance, and cancellation coverage.
+- `npm test`: 81/81 passing, including governance layer (11), integration/automation wiring (2), core/context (19), and the existing optical/robustness suites.
 
 ## 0.1.0
 
