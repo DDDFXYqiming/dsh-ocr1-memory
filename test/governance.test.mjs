@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -83,7 +84,7 @@ test('archive hides memory and rollback restores it', async () => {
   try {
     await manager.write({ topic: 'mutable', entryType: 'fact', content: 'A', evidence: 'initial', namespace: 'test' })
     await manager.update({ topic: 'mutable', entryType: 'fact', content: 'B', evidence: 'updated', namespace: 'test' })
-    assert.equal(manager.archive({ topic: 'mutable', entryType: 'fact', namespace: 'test' }).archived, true)
+    assert.equal((await manager.archive({ topic: 'mutable', entryType: 'fact', namespace: 'test' })).archived, true)
     assert.equal(manager.read({ name: 'mutable', namespace: 'test' }).not_found, true)
     const restored = await manager.rollback({ topic: 'mutable', entryType: 'fact', namespace: 'test' })
     assert.equal(restored.restored, true)
@@ -128,6 +129,82 @@ test('maintenance keeps index and optical artifacts coherent', async () => {
     assert.equal(report.namespace, 'test')
     assert.equal(typeof report.report.stats, 'object')
     assert.match(manager.index({ namespace: 'test' }).index, /maintain-me/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('non-default namespace leaves the memoryDir root pristine', async () => {
+  const { dir, manager } = await makeManager()
+  try {
+    // makeManager uses defaultNamespace=test, autoNamespace=false: only the
+    // resolved namespace must be seeded; the root must not become a ghost default.
+    assert.equal(existsSync(join(dir, 'index.txt')), false)
+    assert.equal(existsSync(join(dir, 'facts.md')), false)
+    assert.equal(existsSync(join(dir, 'test', 'index.txt')), true)
+    assert.equal(existsSync(join(dir, 'test', 'facts.md')), true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('archive marks the optical entry archived in the shared store', async () => {
+  const { dir, manager } = await makeManager()
+  try {
+    const written = await manager.write({
+      topic: 'archivable',
+      entryType: 'fact',
+      content: 'memorable fact body',
+      evidence: 'unit test',
+      namespace: 'test',
+    })
+    assert.ok(written.optical?.id, 'expected an optical id')
+    const store = await manager.storeFor('test')
+    const before = store.entries.find((e) => e.id === written.optical.id)
+    assert.equal(before.archived, false)
+    await manager.archive({ topic: 'archivable', entryType: 'fact', namespace: 'test' })
+    const after = store.entries.find((e) => e.id === written.optical.id)
+    assert.equal(after.archived, true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('syncOpticalUpdate locates entries across namespaces and preserves history', async () => {
+  const { dir, manager } = await makeManager()
+  try {
+    const written = await manager.write({
+      topic: 'far-ns-entry',
+      entryType: 'fact',
+      content: 'original value',
+      evidence: 'unit test',
+      namespace: 'other',
+    })
+    assert.ok(written.optical?.id)
+    // No explicit namespace: the global reverse lookup must find ns=other.
+    const synced = manager.syncOpticalUpdate(written.optical.id, { text: 'updated value' })
+    assert.equal(synced.governed, true)
+    assert.equal(synced.namespace, 'other')
+    assert.equal(synced.history, true)
+    assert.match(manager.read({ name: 'far-ns-entry', namespace: 'other' }).content, /updated value/)
+    // A .history snapshot was written, so rollback is possible.
+    assert.ok(existsSync(join(dir, 'other', '.history')))
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('rejects control characters in topic to keep L1/prompt injection surface clean', async () => {
+  const { dir, manager } = await makeManager()
+  try {
+    await assert.rejects(
+      manager.write({ topic: 'bad\ntopic', entryType: 'fact', content: 'x', evidence: 'test', namespace: 'test' }),
+      /topic 含换行或控制字符/,
+    )
+    await assert.rejects(
+      manager.write({ topic: 'bad\u0000topic', entryType: 'fact', content: 'x', evidence: 'test', namespace: 'test' }),
+      /topic 含换行或控制字符/,
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

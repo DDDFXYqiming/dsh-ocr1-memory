@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readMemoryContextSnapshot } from '../lib/context.js'
+import { readMemoryContextSnapshot, readMemoryIndexContext } from '../lib/context.js'
 import { apply, inject } from '../lib/index.js'
 
 function tempDir() {
@@ -79,6 +79,31 @@ test('context snapshot skips empty segments and limits entry count', () => {
   }
 })
 
+test('index context injects pointers and optical metadata without memory bodies', () => {
+  const t = tempDir()
+  try {
+    const namespaceDir = join(t.dir, 'project')
+    mkdirSync(namespaceDir, { recursive: true })
+    writeFileSync(join(namespaceDir, 'index.txt'), '# L1\\n- [L2] runtime-fact -> memory_read', 'utf8')
+    writeFileSync(join(t.dir, 'memories.json'), JSON.stringify({ entries: [
+      { id: 'opt-1', source: 'legacy-note', tier: 'normal', hits: 3, segments: [{ id: 1, content: 'secret body must be fetched explicitly' }] },
+    ] }), 'utf8')
+    const context = readMemoryIndexContext({
+      memoryDir: t.dir,
+      defaultNamespace: 'project',
+      autoNamespace: false,
+      opticalStoreDir: t.dir,
+      maxEntries: 3,
+      maxChars: 2000,
+    })
+    assert.match(context, /runtime-fact/)
+    assert.match(context, /legacy-note/)
+    assert.doesNotMatch(context, /secret body must be fetched explicitly/)
+  } finally {
+    t.cleanup()
+  }
+})
+
 test('plugin registers an opt-in synchronous system-prompt context', async () => {
   const t = tempDir()
   try {
@@ -105,21 +130,64 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
       },
     }
 
-    assert.deepEqual(inject, ['tools', 'systemPrompt'])
+    assert.deepEqual(inject, ['tools', 'systemPrompt', 'skills', 'agents', 'sessionQuery'])
     const dispose = apply(ctx, {
       storeDir: t.dir,
+      memoryDir: t.dir,
       useMockRenderer: true,
       autoInjectContext: true,
+      contextMode: 'snapshot',
       contextMaxEntries: 1,
       contextMaxChars: 200,
     })
-    assert.equal(registeredTools.length, 10)
-    await registeredTools[0].execute({})
+    assert.equal(registeredTools.length, 26)
+    await registeredTools.find((tool) => tool.name === 'ocr1_mem_status').execute({})
     assert.equal(contribution?.name, 'ocr1-memory:context')
     assert.equal(typeof contribution?.text, 'function')
     assert.match(contribution.text({}), /registered context/)
     dispose()
     assert.equal(contribution, null)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('index context keeps closing sentinel when the index body is truncated', () => {
+  const t = tempDir()
+  try {
+    const ns = join(t.dir, 'ns')
+    mkdirSync(ns, { recursive: true })
+    // A long untrusted index body that would exceed any small char budget.
+    const longIndex = `# index\n${Array.from({ length: 60 }, (_, i) => `[L2] entry-${i}`).join('\n')}`
+    writeFileSync(join(ns, 'index.txt'), longIndex, 'utf8')
+    const context = readMemoryIndexContext({
+      memoryDir: t.dir,
+      defaultNamespace: 'ns',
+      autoNamespace: false,
+      maxChars: 120,
+    })
+    assert.match(context, /\[L2…/)
+    // The closing sentinel must remain intact even though the body is truncated.
+    assert.match(context, /<\/memory_index>\s*$/)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('optical catalog hides archived entries', () => {
+  const t = tempDir()
+  try {
+    writeFileSync(join(t.dir, 'memories.json'), JSON.stringify({ entries: [
+      { id: 'live', source: 'active', tier: 'vivid', hits: 3, archived: false, segments: [{ id: 1, content: 'active body' }] },
+      { id: 'gone', source: 'archived-note', tier: 'fuzzy', hits: 9, archived: true, segments: [{ id: 1, content: 'archived body' }] },
+    ] }), 'utf8')
+    const context = readMemoryIndexContext({
+      opticalStoreDir: t.dir,
+      maxEntries: 5,
+      maxChars: 4000,
+    })
+    assert.match(context, /active/)
+    assert.doesNotMatch(context, /archived-note/)
   } finally {
     t.cleanup()
   }

@@ -102,6 +102,22 @@ test('store records bounded access history using the injected clock', async () =
   }
 })
 
+test('retrieve can constrain optical candidates to allowed entry ids', async () => {
+  const t = tmpStore()
+  try {
+    const store = await createMemoryStore({ storeDir: t.dir, renderer: createMockRenderer() })
+    const first = await store.add({ text: 'alpha-only memory', source: 'first' })
+    const second = await store.add({ text: 'beta-only memory', source: 'second' })
+    const result = await store.retrieve('alpha', { topK: 5, allowedEntryIds: [second.id] })
+    assert.equal(result.results.length, 0)
+    assert.equal(result.total_entries, 1)
+    const allowed = await store.retrieve('alpha', { topK: 5, allowedEntryIds: [first.id] })
+    assert.equal(allowed.results[0].entryId, first.id)
+  } finally {
+    t.cleanup()
+  }
+})
+
 test('store + retrieve returns verbatim segments and uses OCR text', async () => {
   const t = tmpStore()
   try {
@@ -182,4 +198,21 @@ test('retrieveSegments respects topK and empty query', () => {
   const r = retrieveSegments(entries, 'beta', { topK: 1 })
   assert.equal(r.length, 1)
   assert.equal(r[0].content, 'alpha beta')
+})
+
+test('archived entries are hidden from retrieve but kept in list', async () => {
+  const t = tmpStore()
+  try {
+    const store = await createMemoryStore({ storeDir: t.dir, renderer: createMockRenderer() })
+    const keep = await store.add({ text: 'keep this memory', source: 'keep' })
+    const drop = await store.add({ text: 'archive this memory', source: 'drop' })
+    assert.equal(await store.setArchived(drop.id, true), true)
+    const res = await store.retrieve('memory', { topK: 5 })
+    assert.equal(res.results.length, 1)
+    assert.equal(res.results[0].entryId, keep.id)
+    const listed = await store.list()
+    assert.equal(listed.length, 2)
+  } finally {
+    t.cleanup()
+  }
 })
