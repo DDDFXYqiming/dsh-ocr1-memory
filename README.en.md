@@ -34,7 +34,7 @@ Text memories are split into paragraphs and rendered as SoM-numbered images. Old
 2. `vivid → normal → fuzzy` resolution tiers decay with age; a low-resolution hit triggers active recall.
 3. Retrieval uses text overlap and optional OCR evidence by default. With an optical locator configured, the model emits K-bit `0/1` labels and the plugin selects segments using threshold and Top-K rules.
 4. Fetch reads the selected segments from persisted source text and returns them verbatim.
-5. Visual embeddings, hit-frequency decay, and per-turn context injection are optional.
+5. Visual embeddings and hit-frequency decay are optional; per-turn context injection is enabled by default, with `index` mode for L1/optical metadata and `snapshot` mode for body snapshots.
 6. Governance tools share the same plugin instance; maintenance is bounded by `maintenanceBatchSize`, cancellable, single-flight per namespace, and drained on disposal.
 
 ## Configuration

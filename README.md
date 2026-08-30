@@ -34,7 +34,7 @@
 2. `vivid → normal → fuzzy` 三级分辨率随年龄衰减；命中低清记忆时 active recall 恢复高清。
 3. 配置光学定位器后，模型输出 K 位 `0/1` 标签，插件按阈值和 Top-K 规则选择段。
 4. Fetch 阶段只从持久化原文取回选中段，不生成替代文本。
-5. 视觉 embedding、命中热度衰减和每轮 context 注入都是可选能力。
+5. 视觉 embedding 和命中热度衰减是可选能力；每轮 context 默认开启，`index` 注入 L1/光学元数据，正文快照需选择 `contextMode: snapshot`。
 6. 治理工具和 OCR1 store 使用同一插件实例；默认每轮只注入 L1/光学元数据，详细正文按需 Fetch，历史 context 快照可通过 `contextMode: snapshot` 保留。
 7. `tools/result` 的失败后成功序列会在 `turn/end` 生成 pending；达到维护周期或阈值时自动维护/提醒，正式记忆仍由带 evidence 的治理写入确认。
 

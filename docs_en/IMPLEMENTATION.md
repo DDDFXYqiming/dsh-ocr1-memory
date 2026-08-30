@@ -54,16 +54,29 @@ Locator requests use an OpenAI-compatible interface. The image appears at the fr
 
 ### 2.4 Per-turn context snapshots
 
-With `autoInjectContext` enabled, the entry registers `ocr1-memory:context` through DSH `systemPrompt.context()`. The provider synchronously reads the manifest, ranks entries by hit count and recent access, truncates segment text, and enforces `contextMaxEntries` and `contextMaxChars`.
+With `autoInjectContext` enabled, `contextMode: index` registers `ocr1-memory:index` through DSH `systemPrompt.context()`. It synchronously reads the governed L1 index plus optical metadata and never injects memory bodies. `contextMode: snapshot` instead registers `ocr1-memory:context`; that provider ranks persisted segments by hit count/recent access, truncates body text, and enforces `contextMaxEntries` and `contextMaxChars`.
 
-The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. `list`, `status`, and metrics likewise project the current manifest without rendering or network work. Explicit maintenance migrates stale tiers in batches of at most `maintenanceBatchSize` entries. Maintenance is single-flight per namespace; duplicate calls report `already-running`, cancellation reaches renderer/OCR/embedding, and disposal cancels and drains owned work. Reports expose `remaining` and `complete` for later batches.
+Both providers read disk only; they perform no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. `list`, `status`, and metrics likewise project the current manifest without rendering or network work. Explicit maintenance migrates stale tiers in batches of at most `maintenanceBatchSize` entries. Maintenance is single-flight per namespace; duplicate calls report `already-running`, cancellation reaches renderer/OCR/embedding, and disposal cancels and drains owned work. Reports expose `remaining` and `complete` for later batches.
 
 ## 3. Key options
 
 | Option | Default | Purpose |
 |---|---:|---|
+| `memoryDir` | `~/.dsh/memory` | governed L1/L2/L3, pending, archive, and history root |
+| `maxIndexLines` | `30` | maximum L1 index lines |
+| `defaultNamespace` | empty | namespace used when automatic resolution is disabled |
+| `autoNamespace` | `true` | resolve namespace from workspace/git context |
+| `autoPending` | `true` | create pending candidates from failure-then-success sequences |
+| `maintainEveryTurns` | `20` | persisted turn interval for automatic maintenance; `0` disables it |
+| `reflectPendingThreshold` | `5` | pending threshold for reflection reminders |
+| `reflectSopsThreshold` | `40` | active-SOP threshold for reflection reminders |
 | `maintenanceBatchSize` | `8` | maximum stale or missing-image entries rerendered by one maintenance run |
 | `ocrBaseUrl` | empty | OpenAI-compatible `/v1/chat/completions` endpoint; an explicit port controls auto-start |
+| `ocrApiKey` | empty | API key for the OCR endpoint |
+| `ocrModel` | `deepseek-ai/DeepSeek-OCR` | model name sent to the OCR endpoint |
+| `ocrRepeatPenalty` | `1.2` | OCR repetition penalty |
+| `ocrNoRepeatNgramSize` | `30` | OCR no-repeat n-gram size |
+| `ocrTextOnlyPromptTokens` | `5` | text-only baseline subtracted from OCR usage |
 | `requireOcr` | `false` | fail instead of silently degrading when OCR is unavailable |
 | `autoStartOcrServer` | `false` | have the plugin ensure `llama-server` is online, deduplicated by endpoint |
 | `ocrServerPath` / `ocrModelDir` | empty | executable and model directory for auto-start; environment overrides are supported |
@@ -77,6 +90,11 @@ The provider reads disk only; it performs no OCR, embedding, retrieval, or netwo
 | `ocrEmbeddingIdleTimeoutMs` | `300000` | idle shutdown delay for on-demand separate embedding |
 | `ocrMaxEntriesPerRetrieve` | `5` | maximum entries sent through OCR per retrieval |
 | `opticalLocatorEnabled` | `false` | enable the trained optical locating path |
+| `opticalLocatorBaseUrl` | empty | locator endpoint; falls back to `ocrBaseUrl` |
+| `opticalLocatorModel` | `deepseek-ocr-memory` | locator model name |
+| `opticalLocatorTimeoutMs` | `120000` | locator request timeout |
+| `opticalLocatorMaxSegments` | `20` | maximum segments exposed to one locator request |
+| `opticalLocatorAlwaysUnionTopK` | `false` | union Top-K with threshold-selected segments |
 | `opticalLocatorThreshold` | `0.4` | `p(1)` selection threshold |
 | `opticalLocatorTopK` | `5` | fallback when no segment crosses the threshold |
 | `opticalLocatorStrict` | `true` | reject malformed labels |
@@ -85,11 +103,16 @@ The provider reads disk only; it performs no OCR, embedding, retrieval, or netwo
 | `decayRecencyHalfLifeMs` | 14 days | half-life for recent-access weight |
 | `decayHitWeight` | `1` | hit-frequency weight in the multiplier |
 | `decayMaxMultiplier` | `4` | maximum effective-age multiplier |
-| `autoInjectContext` | `true` | inject a bounded context each turn (`contextMode: index` for L1/optical metadata, `snapshot` for full-body snapshots) |
-| `contextMaxEntries` | `5` | maximum entries in the snapshot |
-| `contextMaxChars` | `4000` | maximum snapshot characters |
+| `autoInjectContext` | `true` | inject bounded context each turn (`index` for L1/optical metadata, `snapshot` for full-body snapshots) |
+| `contextMode` | `index` | select metadata index or body snapshot context |
+| `contextMaxEntries` | `5` | maximum entries in the context |
+| `contextMaxChars` | `4000` | maximum context characters |
 | `sharedStore` | `false` | reload the manifest before each operation |
 | `embeddingRetrieval` | `false` | enable visual-embedding retrieval signals |
+| `decayFrequencyWindowMs` | 7 days | smoothing window for hit frequency |
+| `decayRecencyHalfLifeMs` | 14 days | half-life for recent-access weight |
+| `decayHitWeight` | `1` | hit-frequency weight in the multiplier |
+| `decayMaxMultiplier` | `4` | maximum effective-age multiplier |
 
 The remaining renderer options (`pythonPath`, `renderScript`, repetition controls), locator limits/timeouts, embedding API settings, and text-token baseline are defined in the `Config` object in `lib/index.js`.
 
