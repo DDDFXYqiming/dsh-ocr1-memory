@@ -2,9 +2,9 @@
 
 # @dsh-external/dsh-ocr1-memory
 
-受 **DeepSeek-OCR: Contexts Optical Compression**（OCR1）启发的 DSH 光学记忆插件。
+一个 DSH 光学记忆插件，思路来自 **DeepSeek-OCR** 论文（Contexts Optical Compression，OCR1）。文本记忆按段落渲染成带 SoM 编号的图像，旧记忆按年龄降低分辨率。检索默认依据文本与 OCR 证据，配置了光学定位器的话，可以再由模型挑出相关段，最后确定性地返回原始 verbatim 文本。
 
-文本记忆会被按段落渲染为带 SoM 编号的图像，旧记忆按年龄降低分辨率；检索默认走文本/OCR 证据，可选由光学定位器选择相关段，最后确定性地返回原始 verbatim 文本。
+把记忆渲染成图像，用的是论文里对长上下文做光学压缩的思路，这一步到底省了多少，`ocr1_mem_metrics` 会给出文本 token、视觉 token 和压缩比的实测数字，省不省一目了然。
 
 ## 能力
 
@@ -30,17 +30,17 @@
 
 ## 工作方式
 
-1. 文本按空行和长度切成段落，并渲染为 SoM 图像。
-2. `vivid → normal → fuzzy` 三级分辨率随年龄衰减；命中低清记忆时 active recall 恢复高清。
-3. 配置光学定位器后，模型输出 K 位 `0/1` 标签，插件按阈值和 Top-K 规则选择段。
-4. Fetch 阶段只从持久化原文取回选中段，不生成替代文本。
-5. 视觉 embedding 和命中热度衰减是可选能力；每轮 context 默认开启，`index` 注入 L1/光学元数据，正文快照需选择 `contextMode: snapshot`。
-6. 治理工具和 OCR1 store 使用同一插件实例；默认每轮只注入 L1/光学元数据，详细正文按需 Fetch，历史 context 快照可通过 `contextMode: snapshot` 保留。
-7. `tools/result` 的失败后成功序列会在 `turn/end` 生成 pending；达到维护周期或阈值时自动维护/提醒，正式记忆仍由带 evidence 的治理写入确认。
+1. 文本按空行和长度切成段落，再渲染为 SoM 图像。
+2. 记忆图像的分辨率随年龄在 `vivid → normal → fuzzy` 三级之间衰减。哪次检索命中了低清记忆，active recall 会先把它恢复成高清。
+3. 配置光学定位器后，由模型输出 K 位 `0/1` 标签，插件按阈值和 Top-K 规则选出段落。
+4. Fetch 阶段只从持久化原文取回选中的段，返回的就是原文本身，没有替代文本。
+5. 视觉 embedding 和命中热度衰减是可选能力。每轮 context 注入默认开启，`index` 模式注入 L1 与光学元数据，要保留正文快照就选 `contextMode: snapshot`。
+6. 治理工具和 OCR1 store 用的是同一个插件实例。每轮默认只注入 L1 与光学元数据，详细正文按需 Fetch，历史 context 快照靠 `contextMode: snapshot` 保留。
+7. `tools/result` 里先失败后成功的序列会在 `turn/end` 生成 pending。到了维护周期或阈值就自动维护并提醒，正式记忆仍由带 evidence 的治理写入确认。
 
 ## 配置
 
-在 profile 的 `cordis.patch.yml` 中覆盖需要的选项：
+在 profile 的 `cordis.patch.yml` 里覆盖需要的选项。
 
 ```yaml
 - id: dsh-ocr1-memory
@@ -90,7 +90,7 @@
     ocrMaxEntriesPerRetrieve: 5
 ```
 
-需要真实 CPU `llama-server` 时，可将 `autoStartOcrServer` 设为 `true`，并同时提供 `ocrServerPath` 与 `ocrModelDir`；`ocrBaseUrl` 中的显式端口优先用于健康检查和启动。Embedding 默认不参与主检索；若复用同一服务，将 `ocrEmbeddingBaseUrl` 留空即可。训练后的 Locator 可通过 `opticalLocatorAutoStart` 在独立 endpoint 自动启动，模型目录也可由 `OPTICAL_LOCATOR_MODEL_DIR` 提供。
+想让插件自己管一个真实的 CPU `llama-server`，把 `autoStartOcrServer` 设为 `true`，同时提供 `ocrServerPath` 和 `ocrModelDir`。`ocrBaseUrl` 里写了显式端口的话，健康检查和启动都以它为准。Embedding 默认不参与主检索，复用同一个服务时把 `ocrEmbeddingBaseUrl` 留空即可。训练后的 Locator 可以通过 `opticalLocatorAutoStart` 在独立 endpoint 自动启动，模型目录也可以交给 `OPTICAL_LOCATOR_MODEL_DIR` 提供。
 
 高级选项见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
@@ -102,23 +102,27 @@ dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
 
 ## OCR 后端
 
-插件使用 OpenAI 兼容接口（llama.cpp 官方文档列出 `/v1/chat/completions`、`/v1/embeddings` 和多模态输入能力）：
+插件通过 OpenAI 兼容接口与后端通信（llama.cpp 官方文档列出了 `/v1/chat/completions`、`/v1/embeddings` 和多模态输入能力）。
 
-- `/v1/chat/completions`：OCR 读回和光学定位；
-- `/v1/embeddings`：可选的多模态视觉 embedding。
+- `/v1/chat/completions` 负责 OCR 读回和光学定位。
+- `/v1/embeddings` 提供可选的多模态视觉 embedding。
 
-配置 `ocrBaseUrl` 后即可使用 OCR。`requireOcr: false` 时后端不可用会保留文本检索路径；`requireOcr: true` 时会直接报告 OCR 错误。`autoStartOcrServer` 开启后，插件按 endpoint 去重启动 `llama-server`，仅在插件自己启动的进程上执行卸载清理。后端启动、CPU-only 配置、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
+配好 `ocrBaseUrl` 就能用上 OCR。`requireOcr: false` 时后端不可用会保留文本检索路径，`requireOcr: true` 时则直接报告 OCR 错误。`autoStartOcrServer` 开启后，插件按 endpoint 去重启动 `llama-server`，只清理自己启动的进程。后端启动、CPU-only 配置、模型格式和平台注意事项见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 文档
 
-- [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md)：工作流程图；
-- [IMPLEMENTATION](docs/IMPLEMENTATION.md)：架构与实现说明；
-- [DEPLOYMENT](docs/DEPLOYMENT.md)：后端部署与验证；
-- [STATUS](docs/STATUS.md)：当前实现状态；
-- [BENCHMARK](docs/BENCHMARK.md)：与 `dsh-memory` 的隔离对比；
-- [EXPLORATION](docs/EXPLORATION.md)：研究与实测记录；
-- [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md)：测试说明与报告；当前 `npm test` 为 88/88 通过（无后端时真实后端用例会跳过）。
-- [PAPER_MAPPING](docs/2510.18234-paper-vs-plugin-verifiable-concepts.md)：论文原生机制与插件工程扩展的逐项边界。
+| 文档 | 内容 |
+|---|---|
+| [WORKFLOW](docs/OPTICAL_MEMORY_WORKFLOW.md) | 工作流程图 |
+| [IMPLEMENTATION](docs/IMPLEMENTATION.md) | 架构与实现说明 |
+| [DEPLOYMENT](docs/DEPLOYMENT.md) | 后端部署与验证 |
+| [STATUS](docs/STATUS.md) | 当前实现状态 |
+| [BENCHMARK](docs/BENCHMARK.md) | 与 `dsh-memory` 的隔离对比 |
+| [EXPLORATION](docs/EXPLORATION.md) | 研究与实测记录 |
+| [TEST_SPEC](docs/TEST_SPEC.md) / [TEST_REPORT](docs/TEST_REPORT.md) | 测试说明与报告 |
+| [PAPER_MAPPING](docs/2510.18234-paper-vs-plugin-verifiable-concepts.md) | 论文原生机制与插件工程扩展的逐项边界 |
+
+当前 `npm test` 为 88/88 通过（无后端时真实后端用例会跳过）。
 
 ## 参考
 
