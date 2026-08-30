@@ -14,10 +14,12 @@
 | Active recall | ✅ 低清命中后恢复 vivid |
 | 命中热度动态衰减 | ✅ 已实现；`dynamicDecayEnabled` 默认关闭 |
 | 每轮 context | ✅ 默认注入 L1/光学元数据；`contextMode: snapshot` 保留正文快照 |
-| 视觉 embedding | ✅ 可保存真实向量；主检索默认关闭 |
+| 视觉 embedding | ✅ `embeddingRetrieval` 开启时可保存真实向量；主检索默认关闭 |
 | 共享 store | ✅ 可选 reload + 原子保存 |
+| OCR 服务生命周期 | ✅ endpoint 去重、可取消启动、仅清理插件自启动进程 |
+| 维护与取消 | ✅ 每批最多 8 条、namespace single-flight、dispose 会取消并等待 |
 | 治理接线 | ✅ runtime skill、L1、pending、turn/end 维护、阈值提醒与 OCR1 同实例同步 |
-| 测试 | ✅ `npm test` 81/81 通过 |
+| 测试 | ✅ `npm test` 88/88 通过（当前真实后端在线） |
 
 ## 工具
 
@@ -40,7 +42,7 @@
 
 - 文本按段落和长度切分，渲染为带 SoM 编号的方形图像；
 - `vivid → normal → fuzzy` 年龄衰减，分辨率变化时强制重新生成并失效旧 OCR 证据；
-- OCR 读回、文本/视觉 embedding 召回及无后端时的安全降级；
+- OCR 读回、可选文本/视觉 embedding 召回；无后端时 `requireOcr=false` 安全降级，严格模式显式失败；
 - LoRA 光学定位器的请求解析、概率选择、阈值/Top-K 规则和 GBNF 严格模式；
 - Locate 后按段索引返回原始 verbatim 文本；
 - active recall、命中次数、有限访问历史与可选动态衰减；
@@ -52,18 +54,20 @@
 
 | 套件 | 数量 |
 |---|---:|
-| 核心与 context 单元测试 | 19 |
+| 核心 store 测试 | 12 |
+| context 测试 | 7 |
 | 复杂隔离测试 T1–T24 | 24 |
-| OCR HTTP / 服务生命周期 | 4 |
+| OCR HTTP | 2 |
+| OCR 服务生命周期 | 4 |
 | Embedding 测试 E1–E5 | 5 |
 | 定位器测试 L1–L8 | 8 |
-| 治理层与取消信号测试 | 11 |
+| 治理层与取消信号测试 | 13 |
 | 集成接线与自动治理测试 | 2 |
 | 渲染几何 RG1–RG2 | 2 |
-| Robustness M1–M6 | 6 |
-| **合计** | **81** |
+| Robustness M1–M9 | 9 |
+| **合计** | **88** |
 
-真实 OCR、embedding 和渲染依赖后端与 Python 环境；没有后端时，相关测试应显式使用 mock 或按部署清单执行。
+真实 OCR、embedding 和渲染依赖后端与 Python 环境；当前真实后端在线时 88 项全通过，后端不可用时 8 个 live-backend 用例跳过，其余测试仍可执行。
 
 ## 对论文的复现边界
 
@@ -76,4 +80,4 @@
 3. 论文规模训练以及 Mind2Web、AppWorld、RULER 等完整主表评测；
 4. 任意硬件、驱动、量化或服务托管组合下的普遍性能保证。
 
-这些项目需要不同的模型内部访问、数据/评测资源或平台条件；不应把当前小规模端到端验证写成论文主表复现。平台细节和已验证的模型转换路线见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+这些项目需要不同的模型内部访问、数据/评测资源或平台条件；不应把当前小规模端到端验证写成论文主表复现。当前本机以 Windows CPU-only `llama-server` 验证了 OCR/embedding 端到端路径；无真实后端时，8 个依赖服务的用例会跳过而不是伪造通过。平台细节和已验证的模型转换路线见 [DEPLOYMENT.md](DEPLOYMENT.md)。

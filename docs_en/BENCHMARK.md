@@ -105,8 +105,8 @@ Execution script: `scripts/compare-memory.mjs`
 Conclusions:
 - dsh-ocr1-memory passed R1–R6;
 - dsh-memory also passed R1–R6 in this complete script run, but its R5 result is unstable: when the Agent chooses `memory_archive`, the entry remains readable through `memory_read`; it passes only when physical deletion is chosen;
-- The current tests found no case in which dsh-ocr1-memory underperformed dsh-memory;
-- Regarding latency, dsh-ocr1-memory was significantly slower on R3 among R1/R2/R3 because optical retrieval performs OCR on each of the 20 memories; performance was mixed on the remaining tasks;
+- The current isolated script found no case in which dsh-ocr1-memory underperformed dsh-memory; this conclusion is limited to the recorded script, models, and temporary environment;
+- Regarding latency, dsh-ocr1-memory was significantly slower on R3 in this run; optical retrieval OCRs candidate images one by one, while the current default `ocrMaxEntriesPerRetrieve=5` caps OCR entries per call. Actual latency still depends on the candidates and backend configuration; performance was mixed on the remaining tasks;
 - Note: both systems returned `B` for R4; dsh-ocr1-memory now provides the explicit `ocr1_mem_update`, making conflict resolution more reliable.
 
 ## Extended R5/R6 Status

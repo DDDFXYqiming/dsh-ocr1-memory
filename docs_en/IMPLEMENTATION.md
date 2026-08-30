@@ -22,7 +22,8 @@ This document describes the plugin architecture and its reproduction scope for D
 1. Input text is split by blank lines and length into ordered segments, starting at segment id 1.
 2. The renderer draws the segments into a numbered square SoM image; the original segments are written to `memories.json` as the sole source for deterministic Fetch.
 3. The image cache key includes content, resolution, and renderer version. A content or tier change invalidates OCR, locator, and embedding evidence.
-4. OCR readback and multimodal embeddings are optional. If the backend is unavailable, lenient configuration preserves text memory; `requireOcr` can enable strict failure.
+4. OCR readback is optional: with `requireOcr: false`, the text path remains available without an OCR client; with `requireOcr: true`, missing or failed OCR readback is reported.
+5. Persistent visual embeddings are generated only when `embeddingRetrieval: true`; `ocr1_mem_embed_test` can still probe a configured embedding client independently.
 
 ### 2.2 Tiers and hit frequency
 
@@ -55,15 +56,26 @@ Locator requests use an OpenAI-compatible interface. The image appears at the fr
 
 With `autoInjectContext` enabled, the entry registers `ocr1-memory:context` through DSH `systemPrompt.context()`. The provider synchronously reads the manifest, ranks entries by hit count and recent access, truncates segment text, and enforces `contextMaxEntries` and `contextMaxChars`.
 
-The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. `list`, `status`, and metrics likewise project the current manifest without rendering or network work. Explicit maintenance migrates stale tiers in batches of at most `maintenanceBatchSize` entries.
+The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. `list`, `status`, and metrics likewise project the current manifest without rendering or network work. Explicit maintenance migrates stale tiers in batches of at most `maintenanceBatchSize` entries. Maintenance is single-flight per namespace; duplicate calls report `already-running`, cancellation reaches renderer/OCR/embedding, and disposal cancels and drains owned work. Reports expose `remaining` and `complete` for later batches.
 
 ## 3. Key options
 
 | Option | Default | Purpose |
 |---|---:|---|
 | `maintenanceBatchSize` | `8` | maximum stale or missing-image entries rerendered by one maintenance run |
-| `ocrBaseUrl` | empty | OpenAI-compatible `/v1/chat/completions` endpoint |
-| `requireOcr` | `false` | fail instead of degrading when OCR is unavailable |
+| `ocrBaseUrl` | empty | OpenAI-compatible `/v1/chat/completions` endpoint; an explicit port controls auto-start |
+| `requireOcr` | `false` | fail instead of silently degrading when OCR is unavailable |
+| `autoStartOcrServer` | `false` | have the plugin ensure `llama-server` is online, deduplicated by endpoint |
+| `ocrServerPath` / `ocrModelDir` | empty | executable and model directory for auto-start; environment overrides are supported |
+| `ocrServerPort` | `18080` | fallback launch port when the URL has no explicit port |
+| `ocrEmbeddingBaseUrl` | empty | embedding endpoint; falls back to `ocrBaseUrl` |
+| `ocrEmbeddingAutoStart` | `false` | auto-start a separate embedding endpoint at plugin load |
+| `ocrEmbeddingOnDemand` | `true` | start a separate embedding endpoint on first use |
+| `ocrEmbeddingPort` | `18084` | fallback port for a separate embedding endpoint |
+| `ocrEmbeddingUbatchSize` | `2048` | physical batch limit for embedding server startup |
+| `ocrEmbeddingContextSize` | `2048` | context size for combined/separate embedding startup |
+| `ocrEmbeddingIdleTimeoutMs` | `300000` | idle shutdown delay for on-demand separate embedding |
+| `ocrMaxEntriesPerRetrieve` | `5` | maximum entries sent through OCR per retrieval |
 | `opticalLocatorEnabled` | `false` | enable the trained optical locating path |
 | `opticalLocatorThreshold` | `0.4` | `p(1)` selection threshold |
 | `opticalLocatorTopK` | `5` | fallback when no segment crosses the threshold |
@@ -79,7 +91,9 @@ The provider reads disk only; it performs no OCR, embedding, retrieval, or netwo
 | `sharedStore` | `false` | reload the manifest before each operation |
 | `embeddingRetrieval` | `false` | enable visual-embedding retrieval signals |
 
-The remaining renderer, embedding-service, and auto-start options are defined in the `Config` object in `lib/index.js`.
+The remaining renderer options (`pythonPath`, `renderScript`, repetition controls), locator limits/timeouts, embedding API settings, and text-token baseline are defined in the `Config` object in `lib/index.js`.
+
+When OCR and embeddings share an endpoint, the plugin uses one combined startup specification. A separate embedding endpoint can be started on demand and stopped after `ocrEmbeddingIdleTimeoutMs`. Only plugin-started processes with recorded PIDs are stopped during disposal; an already-running external service is left alone.
 
 ## 4. Locator training and deployment chain
 
@@ -131,5 +145,6 @@ These boundaries arise from public runtime interfaces, model formats, and availa
 - [STATUS](STATUS.md): current status;
 - [BENCHMARK](BENCHMARK.md): isolated benchmark;
 - [EXPLORATION](EXPLORATION.md): research and experiment log;
-- [TEST_SPEC](TEST_SPEC.md) / [TEST_REPORT](TEST_REPORT.md): test specification and results.
+- [TEST_SPEC](TEST_SPEC.md) / [TEST_REPORT](TEST_REPORT.md): test specification and results; the current full regression is 88/88 with a healthy live backend.
+- [Paper mapping](../docs/2510.18234-paper-vs-plugin-verifiable-concepts.md): paper-native mechanisms, engineering extensions, and acceptance boundaries.
 

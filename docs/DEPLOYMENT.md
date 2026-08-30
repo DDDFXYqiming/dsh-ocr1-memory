@@ -26,7 +26,20 @@ powershell -File scripts/start-ocr-server.ps1
 
 脚本会检查健康状态，必要时以 detached 子进程启动 `llama-server`。也可以通过 `autoStartOcrServer` 让插件加载时自动确保服务在线；模型目录和可执行文件通过 `ocrModelDir`、`ocrServerPath`、`OCR_MODEL_DIR`、`OCR_SERVER_PATH` 或 PATH 提供。仓库不包含本机绝对路径；服务不在线且未提供模型目录时，启动会明确报错。
 
-建议先独立确认 `/health` 或 `/props`，再把服务的 `/v1` 地址填入 `ocrBaseUrl`。使用 combined 模式时，将同一个地址填入 `ocrEmbeddingBaseUrl`，或留空让插件回退到 OCR 地址。URL 中的显式端口是启动与健康检查的权威端口；同一 endpoint 的并发启动会合并为一个任务。插件只回收自己启动的进程，启动失败、取消和卸载都会等待并清理已拥有的服务。
+典型的本机 CPU-only 配置（路径按机器替换）如下：
+
+```yaml
+ocrBaseUrl: 'http://127.0.0.1:18080/v1'
+ocrEmbeddingBaseUrl: 'http://127.0.0.1:18080/v1' # combined chat + embeddings
+requireOcr: true
+autoStartOcrServer: true
+ocrServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
+ocrModelDir: 'D:/models/deepseek-ocr-gguf'
+ocrServerPort: 18080
+embeddingRetrieval: false
+```
+
+建议先独立确认 `/health` 或 `/props`，再把服务的 `/v1` 地址填入 `ocrBaseUrl`。使用 combined 模式时，将同一个地址填入 `ocrEmbeddingBaseUrl`，或留空让插件回退到 OCR 地址。URL 中的显式端口是启动与健康检查的权威端口；同一 endpoint 的并发启动会合并为一个任务。插件只回收自己启动的进程，启动失败、取消和卸载都会等待并清理已拥有的服务。`requireOcr: false` 才允许 OCR 不可用时保留文本路径；`true` 会让 OCR 读回显式失败。
 
 ## 3. 定位器模型链
 
@@ -47,7 +60,9 @@ powershell -File scripts/start-ocr-server.ps1
 
 llama.cpp 的多模态 embedding 请求使用运行时返回的 media marker 和裸 base64 图像数据。插件会保存向量维度、图像版本和直接视觉 token 统计；渲染图像变化后，旧 embedding 会被视为失效。
 
-视觉 embedding 默认不参与主检索。只有在目标模型和数据上验证了跨模态区分度后，才建议打开 `embeddingRetrieval`；否则使用文本/OCR 召回更可控。
+视觉 embedding 默认不参与主检索，也不会因仅配置 `ocrEmbeddingBaseUrl` 就为每条记忆生成；只有 `embeddingRetrieval: true` 时，持久化 store 才生成向量并将其用于召回。`ocr1_mem_embed_test` 是独立诊断工具，可直接测量已配置的 embedding client。只有在目标模型和数据上验证了跨模态区分度后，才建议打开 `embeddingRetrieval`；否则使用文本/OCR 召回更可控。
+
+Embedding 与 OCR 使用同一 endpoint 时，插件复用 OCR server；独立 endpoint 可由 `ocrEmbeddingOnDemand` 首次使用时启动，并在 `ocrEmbeddingIdleTimeoutMs` 后回收。`ocrEmbeddingAutoStart` 可改为加载时启动独立服务。
 
 ## 5. 已验证的运行边界
 
@@ -76,10 +91,12 @@ llama.cpp 的多模态 embedding 请求使用运行时返回的 media marker 和
 1. 后端健康检查和图像请求；
 2. SoM 渲染与缺失图像恢复；
 3. OCR 读回及 `prompt_tokens` 记录；
-4. embedding 维度和失败降级；
-5. 定位器严格 K-bit 输出；
-6. 定位后的 verbatim Fetch；
-7. 共享 store、active recall、动态衰减和 context 快照；
-8. `npm test` 全量回归。
+4. `requireOcr` 严格模式与无后端时的文本降级边界；
+5. embedding 维度、按需启动和失败降级；
+6. 定位器严格 K-bit 输出；
+7. 定位后的 verbatim Fetch；
+8. 共享 store、active recall、动态衰减和 context 快照；
+9. `memory_maintain` 的 batch/remaining/取消行为与重复调用；
+10. `npm test` 全量回归。
 
 详细测试场景见 [TEST_SPEC.md](TEST_SPEC.md) 和 [TEST_REPORT.md](TEST_REPORT.md)。

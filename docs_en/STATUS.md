@@ -14,10 +14,12 @@ Quick links: [README](../README.en.md) · [Implementation Notes](IMPLEMENTATION.
 | Active recall | ✅ Restores a fuzzy hit to vivid |
 | Dynamic hit-heat decay | ✅ Implemented; `dynamicDecayEnabled` is disabled by default |
 | Per-turn context | ✅ Enabled by default — injects L1/optical metadata; `contextMode: snapshot` keeps full-body snapshots |
-| Visual embedding | ✅ Can save real vectors; disabled by default for primary retrieval |
+| Visual embedding | ✅ Saves real vectors when `embeddingRetrieval` is enabled; primary retrieval is off by default |
 | Shared store | ✅ Optional reload + atomic save |
+| OCR server lifecycle | ✅ Endpoint deduplication, cancellable startup, and cleanup of plugin-owned processes only |
+| Maintenance and cancellation | ✅ Maximum 8 entries per batch, namespace single-flight, disposal cancellation and drain |
 | Governance integration | ✅ Runtime skill, L1 index, pending distillation, turn/end maintenance, threshold reminders, synced with the same OCR1 store instance |
-| Tests | ✅ `npm test` 81/81 passing |
+| Tests | ✅ `npm test` 88/88 with the live backend available |
 
 ## Tools
 
@@ -40,7 +42,7 @@ Quick links: [README](../README.en.md) · [Implementation Notes](IMPLEMENTATION.
 
 - Splits text by paragraph and length, then renders it as square images with SoM indices;
 - Applies `vivid → normal → fuzzy` age decay, forcing regeneration and invalidating old OCR evidence when the resolution changes;
-- Provides OCR readback, text/visual embedding recall, and safe degradation when no backend is available;
+- Provides OCR readback and optional text/visual embedding recall; with `requireOcr=false` no-backend operation degrades safely, while strict mode reports failure;
 - Provides request parsing, probabilistic selection, threshold/Top-K rules, and GBNF strict mode for the LoRA optical locator;
 - Returns original verbatim text by segment index after Locate;
 - Provides active recall, hit counts, bounded access history, and optional dynamic decay;
@@ -52,18 +54,20 @@ Quick links: [README](../README.en.md) · [Implementation Notes](IMPLEMENTATION.
 
 | Suite | Count |
 |---|---:|
-| Core and context unit tests | 19 |
+| Core store tests | 12 |
+| Context tests | 7 |
 | Complex isolation tests T1–T24 | 24 |
-| OCR HTTP / service lifecycle | 4 |
+| OCR HTTP | 2 |
+| OCR server lifecycle | 4 |
 | Embedding tests E1–E5 | 5 |
 | Locator tests L1–L8 | 8 |
-| Governance layer and cancellation signal tests | 11 |
+| Governance layer and cancellation signal tests | 13 |
 | Integration wiring and automation tests | 2 |
 | Rendering geometry RG1–RG2 | 2 |
-| Robustness M1–M6 | 6 |
-| **Total** | **81** |
+| Robustness M1–M9 | 9 |
+| **Total** | **88** |
 
-Real OCR, embedding, and rendering depend on backend services and the Python environment; without a backend, the relevant tests should explicitly use mocks or follow the deployment checklist.
+Real OCR, embedding, and rendering depend on backend services and the Python environment; with the current live backend all 88 cases pass, while eight live-backend cases skip when it is unavailable and the remaining tests still run.
 
 ## Paper Reproduction Boundaries
 
@@ -76,4 +80,4 @@ The following have not yet been fully reproduced:
 3. Paper-scale training and complete main-table evaluations such as Mind2Web, AppWorld, and RULER;
 4. Universal performance guarantees across arbitrary combinations of hardware, drivers, quantization, or service hosting.
 
-These items require different levels of model-internal access, data/evaluation resources, or platform conditions; the current small-scale end-to-end validation should not be described as a reproduction of the paper's main tables. For platform details and the validated model-conversion path, see [DEPLOYMENT.md](DEPLOYMENT.md).
+These items require different levels of model-internal access, data/evaluation resources, or platform conditions; the current small-scale end-to-end validation should not be described as a reproduction of the paper's main tables. The current local evidence covers an end-to-end Windows CPU-only `llama-server` path; without a live backend, eight live-backend cases are skipped rather than treated as passing. For platform details and the validated model-conversion path, see [DEPLOYMENT.md](DEPLOYMENT.md).

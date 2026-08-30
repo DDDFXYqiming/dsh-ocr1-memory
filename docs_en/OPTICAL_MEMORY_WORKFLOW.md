@@ -70,7 +70,7 @@ The plugin uses three image tiers by default:
 | `normal` | 1024 | Memories after the first aging stage |
 | `fuzzy` | 640 | Long-term memory with lower visual cost |
 
-The default time boundaries are approximately as follows: new memories remain `vivid` for 1 day, then enter `normal`, and enter `fuzzy` after 7 days. These widths reference the official DeepSeek-OCR Large, Base, and Small resolution modes; the plugin's image storage and tier management are engineering implementations and are not equivalent to directly exporting the DeepEncoder's internal tokens.
+The default time boundaries are approximately as follows: new memories remain `vivid` for 1 day, then enter `normal`, and enter `fuzzy` after 7 days. These widths reference the naming and tier idea of the official DeepSeek-OCR Large, Base, and Small resolution modes; the plugin's image storage and tier management are engineering implementations and are not equivalent to directly exporting the DeepEncoder's internal tokens.
 
 `dynamicDecayEnabled` can also be enabled optionally:
 
@@ -86,8 +86,10 @@ The default time boundaries are approximately as follows: new memories remain `v
 The plugin can use text token overlap for candidate recall and, depending on the configuration, add:
 
 - Text read back by OCR as visual evidence;
-- Visual embedding similarity;
+- Visual embedding similarity only when `embeddingRetrieval: true`;
 - active recall after a low-resolution hit.
+
+With `requireOcr: false`, an unavailable OCR backend preserves the text path; with `requireOcr: true`, OCR read-back failure is reported instead of silently degrading.
 
 ### 5.2 With the Optical Locator Enabled
 
@@ -121,6 +123,12 @@ After `autoInjectContext` is enabled, the plugin registers a dynamic context thr
 - Returns empty content when the manifest is corrupted, without blocking Prompt assembly.
 
 This path “automatically provides a small number of memory summaries”; it does not replace the complete `ocr1_mem_retrieve`. The default `contextMode: index` injects only L1/optical metadata (never bodies); `contextMode: snapshot` uses this full-body summary path, which consumes more model context and session records and must be enabled explicitly.
+
+### 6.1 Maintenance, cancellation, and server lifecycle
+
+- `memory_maintain` and automatic maintenance are single-flight per namespace; each run refreshes at most `maintenanceBatchSize` optical entries (default 8) and returns `remaining`/`complete`.
+- Maintenance, rendering, OCR, embeddings, and server startup observe cooperative cancellation; plugin disposal cancels and drains owned work.
+- OCR server startup is deduplicated by endpoint and honors an explicit URL port. Only PIDs started and recorded by the plugin are stopped during disposal; an external already-running server is left alone.
 
 ## 7. Parts Not Fully Implemented at Present
 
@@ -184,4 +192,5 @@ Therefore, the most honest current delivery statement is: the plugin implements 
 - [Official DeepSeek-OCR README](https://github.com/deepseek-ai/DeepSeek-OCR/blob/main/README.md)
 - [DeepSeek-OCR paper](https://arxiv.org/abs/2510.18234)
 - [OCR-Memory paper](https://arxiv.org/abs/2604.26622)
+- [Paper mapping and plugin boundaries](../docs/2510.18234-paper-vs-plugin-verifiable-concepts.md)
 - [llama.cpp Server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)

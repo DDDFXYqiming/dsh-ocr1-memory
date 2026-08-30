@@ -45,6 +45,7 @@
 - 各自使用 `mkdtemp` 临时 store/memoryDir，跑完清理；
 - 不修改默认 `~/.dsh/ocr1-memory` 与 `~/.dsh/memory`；
 - 不 kill 进程：脚本默认 `COMPARE_TIMEOUT_MS=0`（无超时 kill），必要时用后台任务观察。
+- 维护专项测试使用配置项 `maintenanceBatchSize` 作为上限；`memory_maintain` 公共接口只接受 namespace，并返回剩余工作，不开放任意 batch 覆盖。
 
 ## 4. 当前结果摘要
 

@@ -16,22 +16,30 @@
 | Rendering | Python + Pillow + CJK fonts (Microsoft YaHei/SimHei) |
 | Isolation method | Each test uses an independent `mkdtemp` directory, which is automatically deleted after the test |
 
-## Current Passing Status
+## Current Passing Status (2026-08-30)
 
 | Suite | Result |
 |---|---|
-| `npm test` (codified) | 81/81 passed |
-| Core and context unit tests | 19/19 passed |
+| `npm test` (healthy live backend) | 88/88 passed, 0 failed, 0 skipped |
+| Core store tests | 12/12 passed |
+| Context tests | 7/7 passed |
 | Complex isolation tests (T1–T24) | 24/24 passed |
-| OCR HTTP / rendering cache tests | 2/2 passed |
+| OCR HTTP | 2/2 passed |
+| OCR server lifecycle | 4/4 passed |
 | Embedding tests (E1–E5) | 5/5 passed |
 | Locator tests (L1–L8) | 8/8 passed |
-| Governance layer and cancellation signal tests | 11/11 passed |
-| Rendering geometry tests (RG1–RG2) | 2/2 passed |
-| OCR server lifecycle tests | 2/2 passed |
+| Governance layer and cancellation signal tests | 13/13 passed |
 | Integration wiring and automation tests | 2/2 passed |
-| Robustness tests (M1–M6) | 6/6 passed |
-| Actual OCR / Embedding isolation tests | PASS (T6/T15/T16/T21/T23/T24/E4, requires llama-server) |
+| Rendering geometry tests (RG1–RG2) | 2/2 passed |
+| Robustness tests (M1–M9) | 9/9 passed |
+| Actual OCR / Embedding cases | PASS (T6/T15/T16/T21/T23/T24/E4; eight live-backend cases skip when the backend is unavailable) |
+
+## Current Web Runtime Verification
+
+- The profile uses `ocrBaseUrl=http://127.0.0.1:18080/v1`, `requireOcr=true`, and `autoStartOcrServer=true`; OCR and embeddings share a CPU-only `llama-server`.
+- `ocr1_mem_status`, `ocr1_mem_calibrate`, and a real image-embedding probe succeeded. The calibration baseline was `prompt_tokens=5`; the independent embedding probe returned 1280 dimensions, `prompt_tokens=785`, and 784 direct visual tokens.
+- Repeated `memory_maintain` calls process at most 8 optical entries and report `remaining`/`complete`; duplicate namespace runs do not overlap, and cancellation/disposal drains owned work.
+- These are machine-specific runtime observations; changing the model, quantization, backend, or service parameters requires revalidation.
 
 ## Unit Test Coverage
 
@@ -71,7 +79,7 @@
 - Literal-matching segments now directly use the segment-level score `segScore`;
 - The OCR aggregate score is used only for “OCR fallback recall when the original text has no match” and no longer contaminates ordinary segment scores.
 
-**Regression**: T4 passed; core and context unit tests 14/14.
+**Regression**: T4 passed; the current core/context unit-test group is 19/19.
 
 ### 2. Resolution Tiers Were Not Aligned with Official OCR1 Modes
 
@@ -137,7 +145,7 @@ content: "Orbit API requires login and a token."
 | T23 | optical memory stores visual token metadata | PASS |
 | T24 | Rendered image generation and visual embedding storage (64-dimensional pixel embedding when no embeddings backend is available) | PASS |
 
-## Robustness Test Coverage (M1–M6)
+## Robustness Test Coverage (M1–M9)
 
 | ID | Scenario | Result |
 |---|---|---|
@@ -147,6 +155,9 @@ content: "Orbit API requires login and a token."
 | M4 | Fall back to a fresh render when the rendering cache is corrupted (cache path replaced by a directory) | PASS |
 | M5 | Oversized multi-paragraph input (>200KB) is segmented, stored, and retrieves the target | PASS |
 | M6 | No data loss after splitting an oversized single paragraph (approximately 250KB) | PASS |
+| M7 | `list` is a pure query and does not implicitly repair or rerender | PASS |
+| M8 | Tier refresh is bounded by `maintenanceBatchSize` and reports remaining work | PASS |
+| M9 | Tier refresh observes cancellation inside the renderer | PASS |
 
 ## Issues Found and Fixed (Second Round)
 
@@ -160,7 +171,7 @@ content: "Orbit API requires login and a token."
 - Added `renderLocks` inside `createMemoryStore`, so concurrent rendering for the same `outputPath` executes only once;
 - Cache writes were changed to best-effort, so failures do not block the main flow.
 
-**Regression**: T12 passed; core and context unit tests 14/14.
+**Regression**: T12 passed; the related core/context and render-lock regressions pass in the current suite.
 
 ## Issues Found and Fixed (Third Round: DSH-Level R5/R6 Validation)
 
@@ -175,18 +186,16 @@ content: "Orbit API requires login and a token."
 
 **Regression**: DSH-level R5 ran again without invalid output; result PASS.
 
-## Automatic OCR Service Startup Validation
+## OCR Service Lifecycle Validation
 
-**Manual fault-recovery validation**:
+**Validation result**:
 
-1. Stop llama-server;
-2. Run `node scripts/ensure-ocr-server.mjs 18080`;
-3. Result: `OCR server started: http://127.0.0.1:18080/v1`;
-4. Then all `npm test` tests passed.
+1. `ocr-server.test.mjs` covers health checks, explicit URL ports, and concurrent startup deduplication; all 4/4 pass;
+2. `autoStartOcrServer` spawns `llama-server` directly as a detached child rather than managing it through a PowerShell wrapper;
+3. Startup cancellation or health timeout reaps the process spawned for that attempt; plugin disposal cancels pending startup, waits for startup tasks, and stops recorded plugin-owned PIDs;
+4. An already-running external service returns `already-up` and is not stopped during disposal.
 
-**Fix record**:
-- Initially, when spawning through a PowerShell script, `stdio:'ignore'` and backslash paths prevented the service from starting;
-- It worked stably after changing to spawn `llama-server.exe` directly.
+The local end-to-end configuration uses `http://127.0.0.1:18080/v1`; OCR and embeddings can share one CPU-only service.
 
 ## Comparison Benchmark: dsh-ocr1-memory vs dsh-memory
 
@@ -203,11 +212,13 @@ content: "Orbit API requires login and a token."
 - [x] Multi-Agent shared store (`sharedStore` + reload + atomic save)
 - [x] Image-missing/cache-corruption recovery tests
 - [x] Oversized-input boundary tests (>200KB multi-paragraph + oversized single paragraph)
+- [x] Pure-query `list`, bounded tier refresh, and renderer cancellation propagation (M7–M9)
+- [x] Namespace single-flight maintenance and disposer drain
 - [ ] Oversized input (10MB) and memory pressure
 - [x] LoRA locator training/evaluation scripts and merged deployment chain: see `DEPLOYMENT.md`
 - [x] Direct visual token count: measured through an embeddings endpoint marker-only request (`visualMemory.visualTokensDirect`)
 - [x] Dynamic decay based on match frequency (disabled by default, preserving old-database behavior)
-- [x] Optional `systemPrompt.context()` memory-summary injection (disabled by default)
+- [x] Optional `systemPrompt.context()` memory-summary injection (enabled by default in `index` mode; `snapshot` mode is explicit)
 - [ ] Paper-scale training and complete main-table evaluation
 - [ ] Internal per-layer DeepEncoder token/embedding export
 
@@ -227,13 +238,13 @@ The scope of evidence is as follows:
 |---|---|---|
 | Text storage, segmentation, persistence, update, and forgetting | Confirmed | Core tests, T8/T10/T17–T19/T22, M1–M2 |
 | SoM rendering, resolution tier, aging, and active recall | Confirmed | T1/T2/T13/T14, RG1–RG2, M3–M4 |
-| Actual OCR image reading | Confirmed with the current configuration | T6/T15/T16/T21/T23/T24 |
+| Actual OCR image reading | Confirmed with the current configuration | T6/T15/T16/T21; strict behavior in T7 |
 | Visual embedding | Confirmed with the current configuration | E1–E5; E4 used the actual backend to return a 1280-dimensional vector |
 | Optical location protocol and verbatim Fetch | Confirmed | L1–L8; the previous DSH isolated closed loop R1–R6 passed |
 | Dynamic decay and context snapshots | Confirmed | Core/context tests; dynamic decay is disabled by default, L1/optical context is enabled by default |
 | DSH plugin loading | Confirmed | Host injection passed; runtime status returned `OK` |
 
-`npm test` currently has **81/81 passed**, and `npm run build`, `npm run test:smoke`, and the Markdown link check also passed. Tests use isolated temporary stores; this does not mean that every model, quantization format, backend, or production dataset requires no additional acceptance testing.
+`npm test` currently has **88/88 passed** with the healthy live backend; without that backend, 80 pass and 8 live-backend cases skip. `npm run build`, `npm run test:smoke`, and the Markdown link check also passed. Tests use isolated temporary stores; this does not mean that every model, quantization format, backend, or production dataset requires no additional acceptance testing.
 
 ### 2. Conclusion for Operation Without a Discrete GPU
 

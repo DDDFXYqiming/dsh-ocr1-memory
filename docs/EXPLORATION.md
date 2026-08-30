@@ -65,15 +65,15 @@
 
 ## 6. llama-server 运行注意事项
 
-- 使用 `-c 8192` 启动更稳定，可容纳 1280×1280 图像产生的视觉 token。
+- 独立 OCR 服务使用 `-c 8192` 更适合容纳 1280×1280 图像产生的视觉 token；OCR 与 embedding 共用 endpoint 时，插件默认使用 `ocrEmbeddingContextSize=2048`，并将 `ocrEmbeddingUbatchSize=2048` 传给服务。
 - 插件已内置自动拉起：`lib/ocr-server.js` + `autoStartOcrServer` 配置。
-- 自动拉起实现细节：直接 spawn `llama-server.exe`，不要走 PowerShell `-File`（实测 PowerShell spawn 在 detached + pipe 下不稳定）。
-- 当前启动命令：
+- 自动拉起实现细节：直接 detached spawn `llama-server.exe`，不走 PowerShell wrapper；同一 endpoint 的并发启动合并为一个任务，取消/失败/卸载只清理插件自己启动的进程。
+- 当前 combined CPU 服务的等价启动参数：
   ```
   llama-server.exe --host 127.0.0.1 --port 18080 \
     -m deepseek-ocr-Q4_K_M.gguf \
     --mmproj mmproj-deepseek-ocr-q8_0.gguf \
-    --alias deepseek-ocr -c 8192 -n 1024
+    --alias deepseek-ocr -c 2048 -np 1 -n 1024 --embeddings --pooling mean -b 2048 -ub 2048
   ```
 
 ## 7. llama.cpp 多模态 embedding（真实视觉 embedding）
@@ -84,7 +84,7 @@
   ```
 - `<media_marker>` 必须从 `GET /props` 的 `media_marker` 字段动态获取（每次启动随机）。
 - `multimodal_data` 必须是**裸 base64**，不能是 `data:image/png;base64,...`（后者会报 `Failed to load image or audio file`）。
-- 默认 `-ub`（physical batch size）为 512，1024×200 的 SoM 记忆图约 784 视觉 token，会报 `input too large`；需 `-ub 2048`。
+- 某些 llama.cpp 构建默认 `-ub`（physical batch size）为 512，1024×200 的 SoM 记忆图约 784 视觉 token，会报 `input too large`；插件的 embedding/combined 自动启动默认传 `-ub 2048`。
 - 实测：
   - 当前 llama.cpp 构建在 `--embeddings --pooling mean` 下**同时支持 `/v1/chat/completions` 和 `/v1/embeddings`**，因此 OCR 与视觉 embedding 可共用同一个 18080 服务；
   - marker-only 请求 `prompt_tokens=785`；
@@ -96,18 +96,19 @@
 ## 8. 关键结论
 
 - 插件核心已能真实调用 DeepSeek-OCR 读图。
-- 隔离临时环境测试通过，`npm test` 已固化 47 项测试。
+- 隔离临时环境测试通过；当前 `npm test` 为 88/88（真实后端在线时 0 skip；后端不可用时 8 个 live-backend 用例跳过）。
 - 新增 `ocr1_mem_metrics` 工具：按官方分辨率模式估算文本 token / 视觉 token 压缩比，并记录真实 OCR 请求的 `usage.prompt_tokens` 和近似视觉 token 数。
 - 新增 `ocr1_mem_update` 工具：支持显式更新记忆，用于冲突消解/最新值覆盖。
 - 新增 `scripts/start-ocr-server.ps1`、`scripts/ensure-ocr-server.mjs`、`lib/ocr-server.js`。
-- 插件新增 `autoStartOcrServer` 配置：启用后插件加载时自动确保 llama-server 在线。
+- 插件新增 `autoStartOcrServer` 配置：启用后插件加载时自动确保 llama-server 在线；`ocrBaseUrl` 的显式端口决定健康检查/启动端口，外部已运行服务不会被插件停止。
 - 对比基准（`BENCHMARK.md`、`scripts/compare-memory.mjs`）：R1–R6 已用修正后脚本完整重跑；dsh-ocr1-memory 全部通过；dsh-memory 本次也全部通过，但 R5 此前手动验证曾 FAIL（归档后仍可读到），行为不稳定；R4 现在有显式 update 能力。
 - DSH 级 R1–R6 已在隔离 headless 环境完成完整对比（不 kill 进程，后台运行）：dsh-ocr1-memory 全部 PASS。
-- 已实现 robustness 增强：多 Agent 共享 store（`sharedStore`）、图像缺失/缓存损坏自动恢复、超长输入边界测试。
-- 现已通过 llama.cpp `/v1/embeddings` 的 marker-only 请求存储**真实 1280 维 DeepSeek-OCR 视觉 embedding**，并测量直接视觉 token 数（marker-only `prompt_tokens` − 空文本基线）。
+- 已实现 robustness 增强：多 Agent 共享 store（`sharedStore`）、图像缺失/缓存损坏自动恢复、超长输入边界测试、纯查询 list、bounded tier refresh 与 renderer 取消传播。
+- 维护路径现为有界、可取消、按 namespace single-flight；`maintenanceBatchSize` 默认 8，插件卸载会取消并等待自动维护。
+- 现已通过 llama.cpp `/v1/embeddings` 的 marker-only 请求存储**真实 1280 维 DeepSeek-OCR 视觉 embedding**，并测量直接视觉 token 数（marker-only `prompt_tokens` − 空文本基线）；当前 probe 为 `785−1=784`。
 - 已实现视觉 embedding 相似度检索：`measureTextEmbedding` 嵌入查询，`retrieveSegmentsWithEmbeddings` 按余弦相似度参与排序；由于跨模态区分度验证不足，插件默认关闭 `embeddingRetrieval`，不把它作为无条件的主检索信号。
 - 已调研通用 agent 记忆测试规范（MemoryAgentBench / LongMemEval / LoCoMo / AMB），并整理成 `TEST_SPEC.md`；R1–R6 与这些规范一一映射。
-- 尝试“无微调让 DeepSeek-OCR 直接输出 SoM 编号”的实验：当前 llama.cpp 后端在自定义 locate prompt 下输出不可靠（返回无关文本而非编号），因此在不做 LoRA 的前提下，论文原版 Locate（模型输出编号）不可推进。
+- 尝试“无微调让 DeepSeek-OCR 直接输出 SoM 编号”的实验：当前 llama.cpp 后端在自定义 locate prompt 下输出不可靠（返回无关文本而非编号），因此在不做 LoRA 的前提下，论文原版 Locate（模型输出编号）不可推进。当前插件的 `opticalLocatorStrict` 路径仍要求兼容的已训练定位模型，并在 malformed 输出时拒绝文本回退。
 
 ## 9. LoRA 光学定位器：本机实跑推进（2026-08）
 

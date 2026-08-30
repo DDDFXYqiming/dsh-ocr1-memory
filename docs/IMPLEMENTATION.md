@@ -23,7 +23,8 @@
 1. 输入文本按空行和长度切分为有序段落，段落 id 从 1 开始。
 2. 渲染器把段落画到带编号的方形 SoM 图像中；原始段落同时写入 `memories.json`，作为确定性 Fetch 的唯一文本来源。
 3. 图像按内容、分辨率和渲染版本生成缓存键。相同内容可复用缓存，内容或 tier 变化会使 OCR、定位器和 embedding 证据失效。
-4. 可配置 OCR 读回和多模态 embedding。后端不可用时，宽松配置保留文本记忆；`requireOcr` 可改为严格报错。
+4. OCR 读回是可选的：`requireOcr: false` 时没有 OCR 客户端仍可保留文本路径，`requireOcr: true` 时 OCR 读回缺失或失败会报告错误。
+5. 视觉 embedding 只有在 `embeddingRetrieval: true` 时才由持久化记忆生成；`ocr1_mem_embed_test` 仍可单独验证已配置的 embedding 客户端。
 
 ### 2.2 层级与热度
 
@@ -41,7 +42,7 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 
 倍率有上限，且随访问变旧平滑下降；它不会修改 `createdAt`，也不会让记忆永久保持高清。该选项默认关闭，以避免升级旧库后改变既有 tier 行为。命中低清记忆仍会触发 active recall，并在短暂豁免期内保持 vivid。
 
-`list`、`status` 和指标读取只投影当前 manifest，不触发重渲染、OCR 或 embedding。层级迁移由显式维护执行，每次最多处理 `maintenanceBatchSize` 条；后续维护继续扫描剩余条目。
+`list`、`status` 和指标读取只投影当前 manifest，不触发重渲染、OCR 或 embedding。层级迁移由显式 `memory_maintain` 或自动维护执行，每次最多处理 `maintenanceBatchSize` 条；报告中的 `remaining`/`complete` 表示是否还有后续批次。维护按 namespace single-flight；重复调用返回 `already-running`，取消信号会传到 renderer/OCR/embedding，插件卸载会取消并等待自己拥有的维护任务。
 
 ### 2.3 检索
 
@@ -62,7 +63,7 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 
 ### 2.5 治理自动化
 
-`lib/automation.js` 复用旧 layered-memory 的事件策略：记录同一工具的失败后成功序列，在 `session/event` 的 `turn/end` 写入 pending 候选；持久化 namespace 级 `turn-state.json`，按 `maintainEveryTurns` 执行维护，并在 pending、SOP 或 L1 超阈值且冷却结束后向 Agent 注入整理提醒。自动化不会直接把候选提升为正式记忆，正式写入仍由 `memory_accept`/`memory_write` 提供 evidence。
+`lib/automation.js` 复用旧 layered-memory 的事件策略：记录同一工具的失败后成功序列，在 `session/event` 的 `turn/end` 写入 pending 候选；持久化 namespace 级 `turn-state.json`，按 `maintainEveryTurns` 执行维护，并在 pending、SOP 或 L1 超阈值且冷却结束后向 Agent 注入整理提醒。自动维护也使用 namespace single-flight，并在 disposer 中取消、等待尚未结束的任务。自动化不会直接把候选提升为正式记忆，正式写入仍由 `memory_accept`/`memory_write` 提供 evidence。
 
 ## 3. 配置要点
 
@@ -77,8 +78,19 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 | `maintenanceBatchSize` | `8` | 每次维护最多重渲染的过期/缺图条目数 |
 | `reflectPendingThreshold` | `5` | pending 阈值提醒 |
 | `reflectSopsThreshold` | `40` | 活跃 SOP 阈值提醒 |
-| `ocrBaseUrl` | 空 | OpenAI 兼容的 `/v1/chat/completions` 地址 |
-| `requireOcr` | `false` | OCR 不可用时是否直接失败 |
+| `ocrBaseUrl` | 空 | OpenAI 兼容的 `/v1/chat/completions` 地址；显式端口也决定自动启动端口 |
+| `requireOcr` | `false` | OCR 不可用时是否直接失败；`true` 不走静默文本降级 |
+| `autoStartOcrServer` | `false` | 是否由插件按 endpoint 确保 `llama-server` 在线 |
+| `ocrServerPath` / `ocrModelDir` | 空 | 自动启动时的可执行文件和模型目录；也可用 `OCR_SERVER_PATH` / `OCR_MODEL_DIR` |
+| `ocrServerPort` | `18080` | URL 未写端口时的启动端口；URL 显式端口优先 |
+| `ocrEmbeddingBaseUrl` | 空 | Embedding 地址；空值回退到 `ocrBaseUrl` |
+| `ocrEmbeddingAutoStart` | `false` | 独立 embedding endpoint 是否在加载时自动启动 |
+| `ocrEmbeddingOnDemand` | `true` | 独立 embedding 服务是否首次使用时启动 |
+| `ocrEmbeddingPort` | `18084` | 独立 embedding 服务的默认端口 |
+| `ocrEmbeddingUbatchSize` | `2048` | embedding llama-server 的 physical batch 上限 |
+| `ocrEmbeddingContextSize` | `2048` | embedding/combined 服务的上下文长度 |
+| `ocrEmbeddingIdleTimeoutMs` | `300000` | 按需独立 embedding 服务的空闲回收时间 |
+| `ocrMaxEntriesPerRetrieve` | `5` | 每次检索最多请求 OCR 的条目数 |
 | `opticalLocatorEnabled` | `false` | 是否走训练后的光学定位路径 |
 | `opticalLocatorThreshold` | `0.4` | `p(1)` 选择阈值 |
 | `opticalLocatorTopK` | `5` | 无阈值命中时的保底数量 |
@@ -95,7 +107,9 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 | `sharedStore` | `false` | 是否每次操作前重载 manifest |
 | `embeddingRetrieval` | `false` | 是否启用视觉 embedding 检索信号 |
 
-其余渲染、embedding 服务和自动启动选项可直接查看 `lib/index.js` 的 `Config`。
+其余渲染参数（`pythonPath`、`renderScript`、重复惩罚）、定位器超时/最大段数、embedding API key 与空文本 token 基线可直接查看 `lib/index.js` 的 `Config`。
+
+当 OCR 与 embedding 共用同一个 endpoint 时，插件使用 combined 启动规格；独立 embedding endpoint 则可按需拉起并在 `ocrEmbeddingIdleTimeoutMs` 后回收。插件只停止自己启动并记录 PID 的服务，外部已运行的服务不会被卸载清理。
 
 ## 4. 定位器训练与部署链
 
@@ -147,4 +161,5 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 - [STATUS.md](STATUS.md)：当前状态；
 - [BENCHMARK.md](BENCHMARK.md)：隔离基准；
 - [EXPLORATION.md](EXPLORATION.md)：研究与实验记录；
-- [TEST_SPEC.md](TEST_SPEC.md) / [TEST_REPORT.md](TEST_REPORT.md)：测试规范与结果。
+- [TEST_SPEC.md](TEST_SPEC.md) / [TEST_REPORT.md](TEST_REPORT.md)：测试规范与结果；当前全量回归为 88/88（健康真实后端可用时）。
+- [2510.18234-paper-vs-plugin-verifiable-concepts.md](2510.18234-paper-vs-plugin-verifiable-concepts.md)：论文原生机制、工程扩展与验收边界。

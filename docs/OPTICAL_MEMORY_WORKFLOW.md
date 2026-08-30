@@ -70,7 +70,7 @@ flowchart TD
 | `normal` | 1024 | 记忆经过第一阶段老化 |
 | `fuzzy` | 640 | 长期记忆、较低视觉成本 |
 
-默认时间边界大致为：新记忆在 1 天内保持 `vivid`，之后进入 `normal`，超过 7 天进入 `fuzzy`。这些宽度参考 DeepSeek-OCR 官方的 Large、Base、Small 分辨率模式；插件的图像存储和 tier 管理属于工程实现，不等同于直接导出 DeepEncoder 内部 token。
+默认时间边界大致为：新记忆在 1 天内保持 `vivid`，之后进入 `normal`，超过 7 天进入 `fuzzy`。这些宽度参考 DeepSeek-OCR 官方 Large、Base、Small 模式的命名和档位思想；插件的图像存储和 tier 管理属于工程实现，不等同于直接导出 DeepEncoder 内部 token。
 
 还可以选择开启 `dynamicDecayEnabled`：
 
@@ -86,8 +86,10 @@ flowchart TD
 插件可以使用文本 token 重叠进行候选召回，并根据配置增加：
 
 - OCR 读回文本作为视觉证据；
-- 视觉 embedding 相似度；
+- `embeddingRetrieval: true` 时的视觉 embedding 相似度；
 - 低清命中后的 active recall。
+
+`requireOcr: false` 时没有 OCR 后端会保留文本路径；`requireOcr: true` 时 OCR 读回失败会显式报错，而不是静默降级。
 
 ### 5.2 启用光学定位器
 
@@ -121,6 +123,12 @@ flowchart TD
 - manifest 损坏时返回空内容，不阻断 Prompt 组装。
 
 这条链路是“自动提供少量记忆摘要”，不是替代完整的 `ocr1_mem_retrieve`。默认 `contextMode: index` 只注入 L1/光学元数据（不进正文）；`contextMode: snapshot` 才使用本链路的正文摘要——正文会占用更多模型上下文和会话记录，需要显式开启。
+
+## 6.1 维护、取消与服务生命周期
+
+- `memory_maintain` 和自动维护共享同一 namespace 的 single-flight；一次最多刷新 `maintenanceBatchSize` 条光学条目（默认 8），结果返回 `remaining` 与 `complete`。
+- 维护、渲染、OCR、embedding 和服务启动都观察 cooperative cancellation；插件卸载会取消并等待自己创建的任务。
+- OCR server 按 endpoint 去重启动；显式 URL 端口优先。只有插件记录为自己启动的 PID 才会在卸载时停止，外部已运行的服务保持不动。
 
 ## 7. 当前没有完整实现的部分
 
@@ -184,4 +192,5 @@ SoM 数据 → 图像输入 → 二元监督 → LoRA → 严格解码 → 定�
 - [DeepSeek-OCR 官方 README](https://github.com/deepseek-ai/DeepSeek-OCR/blob/main/README.md)
 - [DeepSeek-OCR 论文](https://arxiv.org/abs/2510.18234)
 - [OCR-Memory 论文](https://arxiv.org/abs/2604.26622)
+- [论文机制与插件边界清单](2510.18234-paper-vs-plugin-verifiable-concepts.md)
 - [llama.cpp Server 文档](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)

@@ -16,22 +16,30 @@
 | 渲染 | Python + Pillow + CJK 字体（微软雅黑/黑体） |
 | 隔离方式 | 每个测试 `mkdtemp` 独立目录，测试结束自动删除 |
 
-## 当前通过状态
+## 当前通过状态（2026-08-30）
 
 | 套件 | 结果 |
 |---|---|
-| `npm test`（已固化） | 81/81 通过 |
-| 核心与 context 单元测试 | 19/19 通过 |
+| `npm test`（健康真实后端在线） | 88/88 通过，0 fail，0 skip |
+| 核心 store 测试 | 12/12 通过 |
+| context 测试 | 7/7 通过 |
 | 复杂隔离测试（T1–T24） | 24/24 通过 |
-| OCR HTTP / 渲染缓存测试 | 2/2 通过 |
+| OCR HTTP | 2/2 通过 |
+| OCR server 生命周期 | 4/4 通过 |
 | Embedding 测试（E1–E5） | 5/5 通过 |
 | 定位器测试（L1–L8） | 8/8 通过 |
-| 治理层与取消信号测试 | 11/11 通过 |
-| 渲染几何测试（RG1–RG2） | 2/2 通过 |
-| OCR server 生命周期测试 | 2/2 通过 |
+| 治理层与取消信号测试 | 13/13 通过 |
 | 集成接线与自动治理测试 | 2/2 通过 |
-| Robustness 测试（M1–M6） | 6/6 通过 |
-| 真实 OCR / Embedding 隔离测试 | PASS（T6/T15/T16/T21/T23/T24/E4，依赖 llama-server） |
+| 渲染几何测试（RG1–RG2） | 2/2 通过 |
+| Robustness 测试（M1–M9） | 9/9 通过 |
+| 真实 OCR / Embedding 用例 | PASS（T6/T15/T16/T21/T23/T24/E4；无后端时共 8 个 live-backend 用例跳过） |
+
+## 当前 Web 运行验证
+
+- profile 使用 `ocrBaseUrl=http://127.0.0.1:18080/v1`、`requireOcr=true`、`autoStartOcrServer=true`；OCR 与 embedding 共用 CPU-only `llama-server`。
+- `ocr1_mem_status`、`ocr1_mem_calibrate` 和真实图像 embedding 均成功；校准基线为 `prompt_tokens=5`，独立 embedding probe 为 1280 维、`prompt_tokens=785`、直接视觉 token=784。
+- 连续 `memory_maintain` 每批最多刷新 8 条并返回 `remaining`/`complete`；重复 namespace 维护不会并发执行，取消和卸载会等待已拥有的任务。
+- 上述是本机运行证据；更换模型、量化、后端或服务参数时应重新验收。
 
 ## 单元测试覆盖
 
@@ -71,7 +79,7 @@
 - 字面命中片段直接使用片段级得分 `segScore`；
 - OCR 聚合分只用于“原始文本无命中时的 OCR 兜底召回”，不再污染普通片段得分。
 
-**回归**：T4 通过，核心与 context 单元测试 14/14。
+**回归**：T4 通过；当前 core/context 单元测试共 19/19 通过。
 
 ### 2. 分辨率层级未对齐 OCR1 官方模式
 
@@ -95,7 +103,7 @@ fuzzy  640  → 100 tokens（对应 OCR1 Small）
 | E4 | 真实 DeepSeek-OCR embeddings 后端生成 1280 维视觉 embedding | PASS |
 | E5 | 启用 embedding 检索时：向量更近的记忆排在前面 | PASS |
 
-真实 E4 实测：`prompt_tokens=785`（marker-only），空文本基线 `prompt_tokens=1`，直接视觉 token=784，embedding 维度=1280。
+真实 E4 在当前健康 CPU-only llama-server 上通过；当前 `ocr1_mem_embed_test` 记录 `prompt_tokens=785`、空文本基线 `prompt_tokens=1`、直接视觉 token=784、embedding 维度=1280。该数值随图像、prompt 和服务配置变化，不能当作论文内部 token 数。
 
 ## 真实 OCR 隔离测试记录
 
@@ -137,7 +145,7 @@ content: "Orbit API 需要登录并携带 token。"
 | T23 | optical memory 存储 visual token 元数据 | PASS |
 | T24 | 渲染图像生成并存储视觉 embedding（无 embeddings 后端时为 64 维像素 embedding） | PASS |
 
-## Robustness 测试覆盖（M1–M6）
+## Robustness 测试覆盖（M1–M9）
 
 | ID | 场景 | 结果 |
 |---|---|---|
@@ -147,6 +155,9 @@ content: "Orbit API 需要登录并携带 token。"
 | M4 | 渲染缓存损坏（缓存路径被替换为目录）时回退到全新渲染 | PASS |
 | M5 | 超长多段落输入（>200KB）分段存储并检索命中目标 | PASS |
 | M6 | 超长单段落（约 250KB）切分后无数据丢失 | PASS |
+| M7 | `list` 为纯查询，不隐式修复或重渲染 | PASS |
+| M8 | tier refresh 受 `maintenanceBatchSize` 限制并报告剩余工作 | PASS |
+| M9 | tier refresh 在 renderer 内观察取消信号 | PASS |
 
 ## 已发现并修复的问题（第二轮）
 
@@ -160,7 +171,7 @@ content: "Orbit API 需要登录并携带 token。"
 - 在 `createMemoryStore` 内增加 `renderLocks`，同一 `outputPath` 的并发渲染只执行一次；
 - 缓存写入改为 best-effort，失败不阻断主流程。
 
-**回归**：T12 通过，核心与 context 单元测试 14/14。
+**回归**：T12 通过；相关核心/context 回归以及并发锁测试均通过。
 
 ## 已发现并修复的问题（第三轮：DSH 级 R5/R6 验证）
 
@@ -175,18 +186,16 @@ content: "Orbit API 需要登录并携带 token。"
 
 **回归**：DSH 级 R5 再次执行无 invalid output，结果 PASS。
 
-## 自动拉起 OCR 服务验证
+## OCR 服务生命周期验证
 
-**手动故障恢复验证**：
+**验证结果**：
 
-1. 停止 llama-server；
-2. 运行 `node scripts/ensure-ocr-server.mjs 18080`；
-3. 结果：`OCR server started: http://127.0.0.1:18080/v1`；
-4. 随后 `npm test` 全部通过。
+1. `ocr-server.test.mjs` 覆盖健康检查、URL 显式端口、同 endpoint 并发启动去重；4/4 通过；
+2. `autoStartOcrServer` 直接 detached spawn `llama-server`，不会通过 PowerShell wrapper 管理子进程；
+3. 启动取消或健康检查超时会回收本次 spawn 的进程；插件 dispose 会取消 pending startup、等待 startup task，并停止记录过的自启动 PID；
+4. 已运行的外部服务只返回 `already-up`，不会被插件卸载。
 
-**修复记录**：
-- 最初通过 PowerShell 脚本 spawn 时，`stdio:'ignore'` 和反斜杠路径会导致服务无法启动；
-- 改为直接 spawn `llama-server.exe` 后稳定工作。
+端到端本机配置使用 `http://127.0.0.1:18080/v1`，OCR 与 embedding 可共用一个 CPU-only 服务。
 
 ## 对比基准：dsh-ocr1-memory vs dsh-memory
 
@@ -203,6 +212,8 @@ content: "Orbit API 需要登录并携带 token。"
 - [x] 多 Agent 共享 store（`sharedStore` + reload + 原子保存）
 - [x] 图像缺失/缓存损坏恢复测试
 - [x] 超长输入边界测试（>200KB 多段落 + 超长单段落）
+- [x] `list` 纯查询、bounded tier refresh 与 renderer 取消传播（M7–M9）
+- [x] namespace single-flight 维护与 disposer drain
 - [ ] 超长输入（10MB）与内存压力
 - [x] LoRA 定位器训练/评估脚本与合并部署链：详见 `docs/DEPLOYMENT.md`
 - [x] 直接视觉 token 数：通过 embeddings 端点 marker-only 请求测量（`visualMemory.visualTokensDirect`）
@@ -227,13 +238,14 @@ store → SoM 图像与原文持久化 → tier 刷新 → 检索 → segment Fe
 |---|---|---|
 | 文本存储、分段、持久化、更新、遗忘 | 已确认 | 核心测试、T8/T10/T17–T19/T22、M1–M2 |
 | SoM 渲染、分辨率 tier、老化和 active recall | 已确认 | T1/T2/T13/T14、RG1–RG2、M3–M4 |
-| 真实 OCR 读图 | 当前配置已确认 | T6/T15/T16/T21/T23/T24 |
+| 真实 OCR 读图 | 当前配置已确认 | T6/T15/T16/T21；严格模式覆盖 T7 |
 | 视觉 embedding | 当前配置已确认 | E1–E5，E4 使用真实后端返回 1280 维向量 |
 | 光学定位协议与 verbatim Fetch | 已确认 | L1–L8；此前 DSH 隔离闭环 R1–R6 通过 |
-| 动态衰减与 context 快照 | 已确认 | 核心/context 测试，默认均为关闭 |
+| 动态衰减与 context 快照 | 已确认 | 核心/context 测试；动态衰减默认关闭，index context 默认开启 |
+| 维护 batch、single-flight 与取消 | 已确认 | 治理取消测试、M7–M9、自动治理 disposer 测试 |
 | DSH 插件加载 | 已确认 | host 注入通过，运行时状态返回 `OK` |
 
-`npm test` 当前为 **70/70 通过**，另有 `npm run build`、`npm run test:smoke` 和 Markdown 链接检查通过。测试使用隔离临时 store，不代表任意模型、量化格式、后端或生产数据都无需额外验收。
+`npm test` 当前为 **88/88 通过**（健康真实后端在线）；无后端时 80 项通过、8 项 live-backend 用例跳过。另有 `npm run build`、`npm run test:smoke` 和 Markdown 链接检查通过。测试使用隔离临时 store，不代表任意模型、量化格式、后端或生产数据都无需额外验收。
 
 ### 2. 无独立显卡运行结论
 

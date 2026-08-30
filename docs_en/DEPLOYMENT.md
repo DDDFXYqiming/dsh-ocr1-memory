@@ -28,7 +28,20 @@ powershell -File scripts/start-ocr-server.ps1
 
 Provide the model directory and executable through `ocrModelDir`, `ocrServerPath`, `OCR_MODEL_DIR`, `OCR_SERVER_PATH`, or PATH. The repository contains no machine-specific absolute paths. If the server is down and no model directory is available, startup fails with an explicit error.
 
-Check `/health` or `/props` independently before putting the server's `/v1` address into `ocrBaseUrl`. With combined mode, use the same address for `ocrEmbeddingBaseUrl`, or leave it empty so the plugin falls back to the OCR endpoint. An explicit port in the endpoint URL is authoritative for both launch and health checks. Concurrent starts for one endpoint share one startup task, and cancellation, failed startup, or plugin disposal drains plugin-owned processes without stopping an already-running external server.
+A typical CPU-only profile (replace paths) is:
+
+```yaml
+ocrBaseUrl: 'http://127.0.0.1:18080/v1'
+ocrEmbeddingBaseUrl: 'http://127.0.0.1:18080/v1' # combined chat + embeddings
+requireOcr: true
+autoStartOcrServer: true
+ocrServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
+ocrModelDir: 'D:/models/deepseek-ocr-gguf'
+ocrServerPort: 18080
+embeddingRetrieval: false
+```
+
+Check `/health` or `/props` independently before putting the server's `/v1` address into `ocrBaseUrl`. With combined mode, use the same address for `ocrEmbeddingBaseUrl`, or leave it empty so the plugin falls back to the OCR endpoint. An explicit port in the endpoint URL is authoritative for both launch and health checks. Concurrent starts for one endpoint share one startup task, and cancellation, failed startup, or plugin disposal drains plugin-owned processes without stopping an already-running external server. With `requireOcr: false`, an unavailable OCR backend preserves the text path; `true` reports OCR read-back failure.
 
 ## 3. Locator model chain
 
@@ -47,7 +60,9 @@ Local validation completed the LoRA and merged-model path, but small-scale resul
 
 llama.cpp multimodal embedding requests use the server's current media marker and raw base64 image data. The plugin records dimensions, image identity, and endpoint-level visual-token usage. A re-render invalidates the old embedding.
 
-`embeddingRetrieval` remains off by default. Enable it only after measuring cross-modal discrimination on the target model and data.
+`embeddingRetrieval` remains off by default. Merely configuring `ocrEmbeddingBaseUrl` does not generate vectors for every stored memory; persistent vectors and embedding-based ranking are enabled only when `embeddingRetrieval: true`. The diagnostic `ocr1_mem_embed_test` can probe a configured embedding client independently. Enable retrieval only after measuring cross-modal discrimination on the target model and data.
+
+When OCR and embeddings share an endpoint, the plugin reuses one server. A separate embedding endpoint can start on demand and stop after `ocrEmbeddingIdleTimeoutMs`; `ocrEmbeddingAutoStart` starts it at plugin load.
 
 ## 5. Known boundaries
 
@@ -74,10 +89,12 @@ This describes the hardware dependency of the OCR1 memory service only. Other DS
 1. backend health and multimodal requests;
 2. SoM rendering and missing-image recovery;
 3. OCR read-back and token usage;
-4. embedding dimensions and failure fallback;
-5. strict K-bit locator output;
-6. deterministic verbatim Fetch;
-7. shared stores, active recall, dynamic decay, and context snapshots;
-8. the complete `npm test` suite.
+4. `requireOcr` strict behavior and text fallback boundaries;
+5. embedding dimensions, on-demand startup, and failure fallback;
+6. strict K-bit locator output;
+7. deterministic verbatim Fetch;
+8. shared stores, active recall, dynamic decay, and context snapshots;
+9. `memory_maintain` batching, remaining-work, cancellation, and duplicate-call behavior;
+10. the complete `npm test` suite.
 
 Detailed scenarios are documented in [TEST_SPEC.md](TEST_SPEC.md) and [TEST_REPORT.md](TEST_REPORT.md).

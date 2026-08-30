@@ -45,6 +45,7 @@ The R1–R6 tasks in `scripts/compare-memory.mjs` and `BENCHMARK.md` map as foll
 - Each profile uses a temporary store/memoryDir created with `mkdtemp`, which is cleaned up after the run;
 - Do not modify the default `~/.dsh/ocr1-memory` or `~/.dsh/memory`;
 - Do not kill processes: the script defaults to `COMPARE_TIMEOUT_MS=0` (no timeout kill); use a background task for observation when necessary.
+- For plugin maintenance tests, use `maintenanceBatchSize` as the configuration cap; `memory_maintain` accepts a namespace and reports remaining work rather than exposing an arbitrary public batch override.
 
 ## 4. Current Results Summary
 

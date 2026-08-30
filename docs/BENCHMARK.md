@@ -105,8 +105,8 @@ dsh --profile headless \
 结论：
 - dsh-ocr1-memory 在 R1–R6 全部通过；
 - dsh-memory 在本次完整脚本运行中 R1–R6 也全部通过；但其 R5 结果不稳定：当 Agent 选择 `memory_archive` 时仍可被 `memory_read` 读到，选择物理删除时才通过；
-- 当前测试中没有出现 dsh-ocr1-memory 不如 dsh-memory 的情况；
-- 延迟方面：R1/R2/R3 中 dsh-ocr1-memory 的 R3 明显更慢（因为光学检索会对 20 条记忆逐张 OCR 读回），其余任务互有快慢；
+- 当前隔离脚本中没有出现 dsh-ocr1-memory 不如 dsh-memory 的情况；该结论仅适用于记录的脚本、模型和临时环境；
+- 延迟方面：这次 R3 记录中 dsh-ocr1-memory 明显更慢；光学召回会对候选图像逐张 OCR 读回，当前默认 `ocrMaxEntriesPerRetrieve=5` 限制单次 OCR 条目数，实际耗时仍取决于候选与后端配置；其余任务互有快慢；
 - 注意：R4 两者都返回了 `B`；dsh-ocr1-memory 已新增显式 `ocr1_mem_update`，冲突消解更可靠。
 
 ## R5/R6 扩展状态
