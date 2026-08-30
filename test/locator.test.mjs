@@ -181,7 +181,7 @@ test('L7 tier change invalidates OCR evidence and deletes superseded image', asy
     await store.ensureOcr(store.entries[0])
     assert.equal(store.entries[0].ocrText, 'transcript-1')
     at += 1000
-    await store.list()
+    await store.refreshTiers()
     assert.equal(store.entries[0].tier, 'low')
     assert.equal(store.entries[0].ocrText, null)
     assert.equal(existsSync(oldPath), false)

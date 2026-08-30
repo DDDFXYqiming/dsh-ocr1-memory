@@ -55,12 +55,13 @@ Locator requests use an OpenAI-compatible interface. The image appears at the fr
 
 With `autoInjectContext` enabled, the entry registers `ocr1-memory:context` through DSH `systemPrompt.context()`. The provider synchronously reads the manifest, ranks entries by hit count and recent access, truncates segment text, and enforces `contextMaxEntries` and `contextMaxChars`.
 
-The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. Since the snapshot enters model context and session records, the option is disabled by default.
+The provider reads disk only; it performs no OCR, embedding, retrieval, or network request. A malformed manifest produces an empty string without blocking Prompt assembly. `list`, `status`, and metrics likewise project the current manifest without rendering or network work. Explicit maintenance migrates stale tiers in batches of at most `maintenanceBatchSize` entries.
 
 ## 3. Key options
 
 | Option | Default | Purpose |
 |---|---:|---|
+| `maintenanceBatchSize` | `8` | maximum stale or missing-image entries rerendered by one maintenance run |
 | `ocrBaseUrl` | empty | OpenAI-compatible `/v1/chat/completions` endpoint |
 | `requireOcr` | `false` | fail instead of degrading when OCR is unavailable |
 | `opticalLocatorEnabled` | `false` | enable the trained optical locating path |

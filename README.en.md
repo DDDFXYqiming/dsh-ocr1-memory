@@ -37,6 +37,8 @@ Override the needed options in the profile's `cordis.patch.yml`:
 - id: dsh-ocr1-memory
   config:
     storeDir: ''
+    maintainEveryTurns: 20
+    maintenanceBatchSize: 8
     ocrBaseUrl: ''
     ocrApiKey: ''
     ocrModel: 'deepseek-ai/DeepSeek-OCR'

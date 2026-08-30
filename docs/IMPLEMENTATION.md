@@ -41,6 +41,8 @@ effectiveAge = age(createdAt) / boundedHeatMultiplier(recent access frequency)
 
 倍率有上限，且随访问变旧平滑下降；它不会修改 `createdAt`，也不会让记忆永久保持高清。该选项默认关闭，以避免升级旧库后改变既有 tier 行为。命中低清记忆仍会触发 active recall，并在短暂豁免期内保持 vivid。
 
+`list`、`status` 和指标读取只投影当前 manifest，不触发重渲染、OCR 或 embedding。层级迁移由显式维护执行，每次最多处理 `maintenanceBatchSize` 条；后续维护继续扫描剩余条目。
+
 ### 2.3 检索
 
 无定位器时，插件使用文本重叠、OCR 读回证据和可选 embedding 的 legacy 路径。配置 `opticalLocatorEnabled` 后，流程变为：
@@ -72,6 +74,7 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 | `autoNamespace` | `true` | 从 workspace/git 上下文解析 namespace |
 | `autoPending` | `true` | 是否从失败后成功序列生成 pending |
 | `maintainEveryTurns` | `20` | 持久 turn 计数触发维护的周期；0 表示关闭 |
+| `maintenanceBatchSize` | `8` | 每次维护最多重渲染的过期/缺图条目数 |
 | `reflectPendingThreshold` | `5` | pending 阈值提醒 |
 | `reflectSopsThreshold` | `40` | 活跃 SOP 阈值提醒 |
 | `ocrBaseUrl` | 空 | OpenAI 兼容的 `/v1/chat/completions` 地址 |

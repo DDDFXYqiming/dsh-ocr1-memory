@@ -28,7 +28,7 @@ powershell -File scripts/start-ocr-server.ps1
 
 Provide the model directory and executable through `ocrModelDir`, `ocrServerPath`, `OCR_MODEL_DIR`, `OCR_SERVER_PATH`, or PATH. The repository contains no machine-specific absolute paths. If the server is down and no model directory is available, startup fails with an explicit error.
 
-Check `/health` or `/props` independently before putting the server's `/v1` address into `ocrBaseUrl`. With combined mode, use the same address for `ocrEmbeddingBaseUrl`, or leave it empty so the plugin falls back to the OCR endpoint.
+Check `/health` or `/props` independently before putting the server's `/v1` address into `ocrBaseUrl`. With combined mode, use the same address for `ocrEmbeddingBaseUrl`, or leave it empty so the plugin falls back to the OCR endpoint. An explicit port in the endpoint URL is authoritative for both launch and health checks. Concurrent starts for one endpoint share one startup task, and cancellation, failed startup, or plugin disposal drains plugin-owned processes without stopping an already-running external server.
 
 ## 3. Locator model chain
 

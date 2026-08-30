@@ -145,7 +145,7 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
     assert.equal(contribution?.name, 'ocr1-memory:context')
     assert.equal(typeof contribution?.text, 'function')
     assert.match(contribution.text({}), /registered context/)
-    dispose()
+    await dispose()
     assert.equal(contribution, null)
   } finally {
     t.cleanup()

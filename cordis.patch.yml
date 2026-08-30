@@ -38,4 +38,5 @@
         ocrEmbeddingContextSize: 2048
         sharedStore: false
         embeddingRetrieval: false
+        maintenanceBatchSize: 8
         ocrMaxEntriesPerRetrieve: 5

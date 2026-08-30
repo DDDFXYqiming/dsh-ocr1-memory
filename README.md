@@ -49,6 +49,7 @@
     autoNamespace: true
     autoPending: true
     maintainEveryTurns: 20
+    maintenanceBatchSize: 8
     reflectPendingThreshold: 5
     reflectSopsThreshold: 40
     ocrBaseUrl: ''

@@ -16,6 +16,11 @@
 - English docs under `docs_en/` (STATUS, IMPLEMENTATION, TEST_REPORT, WORKFLOW, BENCHMARK, EXPLORATION, TEST_SPEC, DEPLOYMENT).
 
 ### Changed
+- `list`, `status`, and metrics are pure manifest queries; tier repair moved to explicit bounded maintenance (`maintenanceBatchSize`, default 8).
+- Tool cancellation now reaches maintenance, rendering, OCR, locator, embedding, and server startup; long-running tools declare cooperative deadlines.
+- Visual embeddings are generated during normal store/tier rendering only when `embeddingRetrieval` is enabled.
+- Automatic maintenance is owned, single-flight per namespace, cancellable, and drained on plugin disposal.
+- OCR and embedding startup share one endpoint owner, derive the launch port from the endpoint URL, and clean up every plugin-owned process on failure or disposal.
 - `autoInjectContext` defaults to `true` (schema and resolved config; `contextMode` defaults to `index`).
 - Root `memoryDir` is only `mkdir`'d — it is no longer seeded as a phantom default namespace; the resolved namespace gets the full layout.
 - `memory_write` rejects control characters in `topic` to keep the L1/prompt injection surface clean.
@@ -23,7 +28,7 @@
 - Sanity: all 9 modules checked via `node --check` in `npm run build`.
 
 ### Tests
-- `npm test`: 81/81 passing, including governance layer (11), integration/automation wiring (2), core/context (19), and the existing optical/robustness suites.
+- `npm test`: 88 tests discovered; 80 pass and 8 real-backend checks skip when no OCR server is running. Added pure-list, bounded refresh, cancellation, maintenance single-flight, endpoint-port, and concurrent-start coverage.
 
 ## 0.1.0
 

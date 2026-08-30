@@ -128,7 +128,66 @@ test('maintenance keeps index and optical artifacts coherent', async () => {
     const report = await manager.maintain({ namespace: 'test' })
     assert.equal(report.namespace, 'test')
     assert.equal(typeof report.report.stats, 'object')
+    assert.equal(report.report.status, 'completed')
     assert.match(manager.index({ namespace: 'test' }).index, /maintain-me/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('maintenance is single-flight per namespace', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-ocr1-maintain-single-'))
+  let release
+  let refreshCalls = 0
+  const gate = new Promise((resolve) => { release = resolve })
+  const manager = createGovernedMemorySystem({
+    memoryDir: dir,
+    autoNamespace: false,
+    defaultNamespace: 'test',
+    storeFactory: () => ({
+      async refreshTiers() {
+        refreshCalls += 1
+        await gate
+        return { refreshed: 0, remaining: 0, complete: true }
+      },
+    }),
+  })
+  try {
+    const first = manager.maintain({ namespace: 'test' })
+    const second = await manager.maintain({ namespace: 'test' })
+    assert.equal(second.report.status, 'already-running')
+    release()
+    await first
+    assert.equal(refreshCalls, 1)
+  } finally {
+    release?.()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('maintenance cancellation reaches optical tier refresh', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-ocr1-maintain-cancel-'))
+  let entered
+  const started = new Promise((resolve) => { entered = resolve })
+  const manager = createGovernedMemorySystem({
+    memoryDir: dir,
+    autoNamespace: false,
+    defaultNamespace: 'test',
+    storeFactory: () => ({
+      async refreshTiers({ signal }) {
+        entered()
+        await new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason || new Error('cancelled')), { once: true })
+        })
+      },
+    }),
+  })
+  try {
+    const controller = new AbortController()
+    const pending = manager.maintain({ namespace: 'test', signal: controller.signal })
+    await started
+    controller.abort(new Error('maintenance cancelled'))
+    await assert.rejects(pending, /maintenance cancelled/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

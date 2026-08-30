@@ -157,6 +157,7 @@ test('active recall promotes a fuzzy memory back to vivid on hit', async () => {
     const entry = store.entries[0]
     // Age it 30 days -> fuzzy tier.
     entry.createdAt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    await store.refreshTiers()
     const before = await store.list()
     assert.equal(before[0].tier, 'fuzzy')
     const res = await store.retrieve('astronaut', { topK: 1 })

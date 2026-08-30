@@ -60,7 +60,7 @@ test('M3 missing image file is re-rendered on list/refresh', async () => {
     unlinkSync(imagePath)
     assert.equal(existsSync(imagePath), false)
 
-    await store.list()
+    await store.refreshTiers()
     assert.equal(existsSync(imagePath), true, 'missing image should be re-rendered')
     assert.ok(renderCalls >= 2)
   } finally {
@@ -89,7 +89,7 @@ test('M4 corrupted render cache falls back to fresh render', async () => {
     mkdirSync(cachePath)
     unlinkSync(imagePath)
 
-    await store.list()
+    await store.refreshTiers()
     assert.equal(existsSync(imagePath), true, 'output image should be restored via fresh render')
     assert.ok(renderCalls >= 2)
   } finally {
@@ -127,6 +127,76 @@ test('M6 single very long paragraph is split without data loss', async () => {
     const joined = store.entries[0].segments.map((s) => s.content).join('')
     assert.ok(joined.includes('word word'))
     assert.ok(joined.length >= 200_000)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('M7 list is a pure query and never repairs or rerenders entries', async () => {
+  const t = tmpStore()
+  try {
+    let renderCalls = 0
+    const renderer = async (...args) => {
+      renderCalls += 1
+      return createMockRenderer()(...args)
+    }
+    const store = await createMemoryStore({ storeDir: t.dir, renderer, tiers: DEFAULT_TIERS })
+    const added = await store.add({ text: 'pure list query', source: 'pure-list' })
+    unlinkSync(added.imagePath)
+    store.entries[0].createdAt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+
+    const listed = await store.list()
+    assert.equal(listed[0].tier, 'vivid')
+    assert.equal(existsSync(added.imagePath), false)
+    assert.equal(renderCalls, 1)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('M8 tier refresh is bounded and reports remaining work', async () => {
+  const t = tmpStore()
+  try {
+    let at = Date.now()
+    const store = await createMemoryStore({ storeDir: t.dir, renderer: createMockRenderer(), tiers: DEFAULT_TIERS, now: () => at })
+    for (let i = 0; i < 5; i++) await store.add({ text: `bounded refresh ${i}`, source: `bounded-${i}` })
+    at += 30 * 24 * 3600 * 1000
+
+    const first = await store.refreshTiers({ limit: 2 })
+    assert.deepEqual(first, { refreshed: 2, remaining: 3, complete: false })
+    assert.equal((await store.list()).filter((entry) => entry.tier === 'fuzzy').length, 2)
+
+    const second = await store.refreshTiers({ limit: 8 })
+    assert.deepEqual(second, { refreshed: 3, remaining: 0, complete: true })
+    assert.equal((await store.list()).filter((entry) => entry.tier === 'fuzzy').length, 5)
+  } finally {
+    t.cleanup()
+  }
+})
+
+test('M9 tier refresh observes cancellation inside a renderer', async () => {
+  const t = tmpStore()
+  try {
+    let at = Date.now()
+    let block = false
+    const mock = createMockRenderer()
+    const renderer = async (segments, outputPath, options) => {
+      if (block) {
+        await new Promise((resolve, reject) => {
+          const aborted = () => reject(options.signal.reason || new Error('cancelled'))
+          options.signal.addEventListener('abort', aborted, { once: true })
+        })
+      }
+      return mock(segments, outputPath, options)
+    }
+    const store = await createMemoryStore({ storeDir: t.dir, renderer, tiers: DEFAULT_TIERS, now: () => at })
+    await store.add({ text: 'cancel refresh', source: 'cancel-refresh' })
+    at += 30 * 24 * 3600 * 1000
+    block = true
+    const controller = new AbortController()
+    const pending = store.refreshTiers({ limit: 1, signal: controller.signal })
+    setImmediate(() => controller.abort(new Error('cancel refresh requested')))
+    await assert.rejects(pending, /cancel refresh requested/)
   } finally {
     t.cleanup()
   }

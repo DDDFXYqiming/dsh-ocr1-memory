@@ -26,7 +26,7 @@ powershell -File scripts/start-ocr-server.ps1
 
 脚本会检查健康状态，必要时以 detached 子进程启动 `llama-server`。也可以通过 `autoStartOcrServer` 让插件加载时自动确保服务在线；模型目录和可执行文件通过 `ocrModelDir`、`ocrServerPath`、`OCR_MODEL_DIR`、`OCR_SERVER_PATH` 或 PATH 提供。仓库不包含本机绝对路径；服务不在线且未提供模型目录时，启动会明确报错。
 
-建议先独立确认 `/health` 或 `/props`，再把服务的 `/v1` 地址填入 `ocrBaseUrl`。使用 combined 模式时，将同一个地址填入 `ocrEmbeddingBaseUrl`，或留空让插件回退到 OCR 地址。
+建议先独立确认 `/health` 或 `/props`，再把服务的 `/v1` 地址填入 `ocrBaseUrl`。使用 combined 模式时，将同一个地址填入 `ocrEmbeddingBaseUrl`，或留空让插件回退到 OCR 地址。URL 中的显式端口是启动与健康检查的权威端口；同一 endpoint 的并发启动会合并为一个任务。插件只回收自己启动的进程，启动失败、取消和卸载都会等待并清理已拥有的服务。
 
 ## 3. 定位器模型链
 

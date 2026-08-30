@@ -77,7 +77,7 @@ async function makeContext() {
     injected,
     dispose,
     async close() {
-      dispose()
+      await dispose()
       await rm(dir, { recursive: true, force: true })
     },
   }
