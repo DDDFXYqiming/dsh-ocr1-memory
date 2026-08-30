@@ -54,7 +54,30 @@ embeddingRetrieval: false
 
 训练输入和运行时请求必须保持一致：图像布局、换行前缀、空格分隔的 `0/1` 序列、停止条件和 GBNF 约束都属于协议的一部分。
 
-在本机验证中，LoRA 训练和模型合并路线已经打通；小规模样本可以改善定位，但不代表论文规模的统计复现。验证过的发布形态是合并后的高精度 GGUF；较激进的低比特量化在定位任务上可能放大 LoRA 小增量，发布前应重新做端到端检验。
+可复现的合并与转换入口为：
+
+```bash
+python scripts/merge_locator_adapter.py --adapter <adapter> --base <本地 HF 快照> --output <merged>
+git -C <llama.cpp> apply <repo>/scripts/llama.cpp-deepseek-ocr-locator.patch
+python <llama.cpp>/convert_hf_to_gguf.py <merged> --outfile deepseek-ocr-locator-q8_0.gguf --outtype q8_0
+python <llama.cpp>/convert_hf_to_gguf.py <merged> --mmproj --outfile mmproj-locator-q8_0.gguf --outtype q8_0
+```
+
+当前补丁针对已验证的 llama.cpp `b19cbe925be361d229f0fe03435affe4a2717f37`，补充 transformers 4.57.2 本地 remote-code tokenizer 回退和 DeepSeek-OCR 词表转换。Q8_0 转换本身即量化步骤；本机对比中 Q4 会淹没小幅 LoRA 增量，已验证发布形态为合并后的 Q8_0 GGUF。
+
+独立 Locator 服务可由插件管理：
+
+```yaml
+opticalLocatorEnabled: true
+opticalLocatorBaseUrl: 'http://127.0.0.1:18081/v1'
+opticalLocatorModel: 'deepseek-ocr-memory'
+opticalLocatorAutoStart: true
+opticalLocatorServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
+opticalLocatorModelDir: 'D:/models/deepseek-ocr-locator-gguf'
+opticalLocatorServerPort: 18081
+```
+
+Locator endpoint 应与基础 OCR endpoint 分离。部署质量可用 `npm run eval:locator-http -- --manifest <eval.jsonl> --base-url http://127.0.0.1:18081/v1` 复测严格 K-bit、exact 和 mean F1。在本机验证中，LoRA 训练和模型合并路线已经打通；小规模样本可以改善定位，但不代表论文规模的统计复现。
 
 ## 4. 视觉 embedding
 

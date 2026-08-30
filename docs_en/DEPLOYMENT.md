@@ -54,7 +54,30 @@ Check `/health` or `/props` independently before putting the server's `/v1` addr
 
 Image layout, the pre-image newline, spaced `0/1` grammar, stopping rules, and GBNF constraints are part of the protocol and must remain consistent between training and inference.
 
-Local validation completed the LoRA and merged-model path, but small-scale results are not paper-scale reproduction. Aggressive low-bit quantization can erase small locator improvements; re-run the complete locator evaluation before release.
+The reproducible merge and conversion entry points are:
+
+```bash
+python scripts/merge_locator_adapter.py --adapter <adapter> --base <local-HF-snapshot> --output <merged>
+git -C <llama.cpp> apply <repo>/scripts/llama.cpp-deepseek-ocr-locator.patch
+python <llama.cpp>/convert_hf_to_gguf.py <merged> --outfile deepseek-ocr-locator-q8_0.gguf --outtype q8_0
+python <llama.cpp>/convert_hf_to_gguf.py <merged> --mmproj --outfile mmproj-locator-q8_0.gguf --outtype q8_0
+```
+
+The current patch targets the validated llama.cpp commit `b19cbe925be361d229f0fe03435affe4a2717f37` and adds transformers 4.57.2 local remote-code tokenizer fallbacks plus DeepSeek-OCR vocabulary conversion. The Q8_0 conversion is the quantization step. Local comparisons found that Q4 erased the small LoRA delta; the validated release form is merged Q8_0 GGUF.
+
+The plugin can manage a separate locator service:
+
+```yaml
+opticalLocatorEnabled: true
+opticalLocatorBaseUrl: 'http://127.0.0.1:18081/v1'
+opticalLocatorModel: 'deepseek-ocr-memory'
+opticalLocatorAutoStart: true
+opticalLocatorServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
+opticalLocatorModelDir: 'D:/models/deepseek-ocr-locator-gguf'
+opticalLocatorServerPort: 18081
+```
+
+Use a locator endpoint distinct from the base OCR endpoint. Re-run deployed-path quality with `npm run eval:locator-http -- --manifest <eval.jsonl> --base-url http://127.0.0.1:18081/v1`, which reports strict K-bit failures, exact match, and mean F1. Local validation completed the LoRA and merged-model path, but small-scale results are not paper-scale reproduction.
 
 ## 4. Visual embeddings
 

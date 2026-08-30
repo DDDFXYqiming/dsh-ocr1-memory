@@ -43,6 +43,9 @@ test('concurrent OCR startup uses one spawned server and matching port', async (
       baseUrl: `http://127.0.0.1:${port}/v1`,
       port: 18084,
       modelDir: 'X:/model',
+      modelFile: 'locator-q8.gguf',
+      mmprojFile: 'mmproj-locator-q8.gguf',
+      modelAlias: 'deepseek-ocr-memory',
       serverPath: 'llama-server',
       embeddings: true,
       spawnImpl,
@@ -53,6 +56,9 @@ test('concurrent OCR startup uses one spawned server and matching port', async (
     assert.equal(spawnCalls, 1)
     assert.equal(launchedArgs[launchedArgs.indexOf('--port') + 1], String(port))
     assert.ok(launchedArgs.includes('--embeddings'))
+    assert.match(launchedArgs[launchedArgs.indexOf('-m') + 1], /locator-q8\.gguf$/)
+    assert.match(launchedArgs[launchedArgs.indexOf('--mmproj') + 1], /mmproj-locator-q8\.gguf$/)
+    assert.equal(launchedArgs[launchedArgs.indexOf('--alias') + 1], 'deepseek-ocr-memory')
     assert.equal(first.pid, 424242)
     assert.equal(second.pid, 424242)
   } finally {

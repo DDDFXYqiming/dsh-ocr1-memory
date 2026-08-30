@@ -72,6 +72,12 @@
     opticalLocatorThreshold: 0.4
     opticalLocatorTopK: 5
     opticalLocatorStrict: true
+    opticalLocatorAutoStart: false
+    opticalLocatorServerPath: ''
+    opticalLocatorModelDir: ''
+    opticalLocatorServerPort: 18081
+    opticalLocatorModelFile: 'deepseek-ocr-locator-q8_0.gguf'
+    opticalLocatorMmprojFile: 'mmproj-locator-q8_0.gguf'
 
     # Context / retrieval
     dynamicDecayEnabled: false
@@ -84,7 +90,7 @@
     ocrMaxEntriesPerRetrieve: 5
 ```
 
-需要真实 CPU `llama-server` 时，可将 `autoStartOcrServer` 设为 `true`，并同时提供 `ocrServerPath` 与 `ocrModelDir`；`ocrBaseUrl` 中的显式端口优先用于健康检查和启动。Embedding 默认不参与主检索；若复用同一服务，将 `ocrEmbeddingBaseUrl` 留空即可。
+需要真实 CPU `llama-server` 时，可将 `autoStartOcrServer` 设为 `true`，并同时提供 `ocrServerPath` 与 `ocrModelDir`；`ocrBaseUrl` 中的显式端口优先用于健康检查和启动。Embedding 默认不参与主检索；若复用同一服务，将 `ocrEmbeddingBaseUrl` 留空即可。训练后的 Locator 可通过 `opticalLocatorAutoStart` 在独立 endpoint 自动启动，模型目录也可由 `OPTICAL_LOCATOR_MODEL_DIR` 提供。
 
 高级选项见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 

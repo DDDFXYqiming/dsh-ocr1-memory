@@ -18,6 +18,7 @@
     "scripts/*.mjs",
     "scripts/*.py",
     "scripts/*.ps1",
+    "scripts/*.patch",
     "scripts/vllm_processors/*.py",
     "README.md",
     "README.en.md",
@@ -50,10 +51,11 @@
     }
   },
   "scripts": {
-    "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/context.js && node --check lib/memory-system.js && node --check lib/governance.js && node --check lib/governance-tools.js && node --check lib/automation.js && node --check lib/skill-content.js && node --check lib/ocr-server.js",
+    "build": "node --check lib/index.js && node --check lib/core.js && node --check lib/context.js && node --check lib/memory-system.js && node --check lib/governance.js && node --check lib/governance-tools.js && node --check lib/automation.js && node --check lib/skill-content.js && node --check lib/ocr-server.js && node --check scripts/eval-locator-http.mjs",
     "typecheck": "node --check lib/index.js",
     "test": "node --test test/core.test.mjs test/ocr-http.test.mjs test/complex.test.mjs test/ocr-server.test.mjs test/embedding.test.mjs test/robustness.test.mjs test/locator.test.mjs test/render-geometry.test.mjs test/context.test.mjs test/governance.test.mjs test/integration.test.mjs",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "eval:locator-http": "node scripts/eval-locator-http.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc <5",

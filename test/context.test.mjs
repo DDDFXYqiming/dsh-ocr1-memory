@@ -139,9 +139,15 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
       contextMode: 'snapshot',
       contextMaxEntries: 1,
       contextMaxChars: 200,
+      opticalLocatorEnabled: true,
+      opticalLocatorBaseUrl: 'http://127.0.0.1:18081/v1',
+      opticalLocatorAutoStart: false,
     })
     assert.equal(registeredTools.length, 26)
-    await registeredTools.find((tool) => tool.name === 'ocr1_mem_status').execute({})
+    const status = await registeredTools.find((tool) => tool.name === 'ocr1_mem_status').execute({})
+    assert.equal(status.opticalLocatorEnabled, true)
+    assert.equal(status.opticalLocatorBaseUrl, 'http://127.0.0.1:18081/v1')
+    assert.equal(status.opticalLocatorAutoStart, false)
     assert.equal(contribution?.name, 'ocr1-memory:context')
     assert.equal(typeof contribution?.text, 'function')
     assert.match(contribution.text({}), /registered context/)

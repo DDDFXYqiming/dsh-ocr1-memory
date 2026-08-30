@@ -69,6 +69,12 @@ Override the needed options in the profile's `cordis.patch.yml`:
     opticalLocatorThreshold: 0.4
     opticalLocatorTopK: 5
     opticalLocatorStrict: true
+    opticalLocatorAutoStart: false
+    opticalLocatorServerPath: ''
+    opticalLocatorModelDir: ''
+    opticalLocatorServerPort: 18081
+    opticalLocatorModelFile: 'deepseek-ocr-locator-q8_0.gguf'
+    opticalLocatorMmprojFile: 'mmproj-locator-q8_0.gguf'
 
     # Context / retrieval
     dynamicDecayEnabled: false
@@ -81,7 +87,7 @@ Override the needed options in the profile's `cordis.patch.yml`:
     ocrMaxEntriesPerRetrieve: 5
 ```
 
-For a locally managed CPU `llama-server`, set `autoStartOcrServer: true` and provide both `ocrServerPath` and `ocrModelDir`. An explicit port in `ocrBaseUrl` is authoritative for health checks and launch. Embedding retrieval is disabled by default; leave `ocrEmbeddingBaseUrl` empty to reuse the OCR endpoint.
+For a locally managed CPU `llama-server`, set `autoStartOcrServer: true` and provide both `ocrServerPath` and `ocrModelDir`. An explicit port in `ocrBaseUrl` is authoritative for health checks and launch. Embedding retrieval is disabled by default; leave `ocrEmbeddingBaseUrl` empty to reuse the OCR endpoint. A trained locator can auto-start on a separate endpoint through `opticalLocatorAutoStart`; `OPTICAL_LOCATOR_MODEL_DIR` can provide its model directory.
 
 Advanced options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
 

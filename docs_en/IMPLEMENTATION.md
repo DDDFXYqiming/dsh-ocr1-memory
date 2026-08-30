@@ -98,6 +98,10 @@ Both providers read disk only; they perform no OCR, embedding, retrieval, or net
 | `opticalLocatorThreshold` | `0.4` | `p(1)` selection threshold |
 | `opticalLocatorTopK` | `5` | fallback when no segment crosses the threshold |
 | `opticalLocatorStrict` | `true` | reject malformed labels |
+| `opticalLocatorAutoStart` | `false` | auto-start a trained locator on a separate endpoint |
+| `opticalLocatorServerPath` / `opticalLocatorModelDir` | empty | llama-server and model directory for locator startup; `OPTICAL_LOCATOR_MODEL_DIR` is supported |
+| `opticalLocatorServerPort` | `18081` | fallback launch port when the locator URL has no explicit port |
+| `opticalLocatorModelFile` / `opticalLocatorMmprojFile` | Q8_0 locator names | main model and vision projector loaded for locator startup |
 | `dynamicDecayEnabled` | `false` | enable recent-hit-aware tier aging |
 | `decayFrequencyWindowMs` | 7 days | smoothing window for hit frequency |
 | `decayRecencyHalfLifeMs` | 14 days | half-life for recent-access weight |

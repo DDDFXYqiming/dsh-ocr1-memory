@@ -24,6 +24,12 @@
         opticalLocatorMaxSegments: 20
         opticalLocatorAlwaysUnionTopK: false
         opticalLocatorStrict: true
+        opticalLocatorAutoStart: false
+        opticalLocatorServerPath: ''
+        opticalLocatorModelDir: ''
+        opticalLocatorServerPort: 18081
+        opticalLocatorModelFile: 'deepseek-ocr-locator-q8_0.gguf'
+        opticalLocatorMmprojFile: 'mmproj-locator-q8_0.gguf'
         autoStartOcrServer: false
         ocrEmbeddingBaseUrl: ''
         ocrEmbeddingApiKey: ''

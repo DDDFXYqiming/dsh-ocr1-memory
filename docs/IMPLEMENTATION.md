@@ -95,6 +95,10 @@ provider 只读磁盘，不做 OCR、embedding、检索或网络请求；manifes
 | `opticalLocatorThreshold` | `0.4` | `p(1)` 选择阈值 |
 | `opticalLocatorTopK` | `5` | 无阈值命中时的保底数量 |
 | `opticalLocatorStrict` | `true` | 定位标签格式错误时是否拒绝回退 |
+| `opticalLocatorAutoStart` | `false` | 是否由插件在独立 endpoint 自动启动训练后的 Locator |
+| `opticalLocatorServerPath` / `opticalLocatorModelDir` | 空 | Locator 自动启动所需的 llama-server 与模型目录；模型目录也可用 `OPTICAL_LOCATOR_MODEL_DIR` |
+| `opticalLocatorServerPort` | `18081` | Locator URL 未写端口时的启动端口 |
+| `opticalLocatorModelFile` / `opticalLocatorMmprojFile` | Q8_0 locator 文件名 | 自动启动时加载的主模型和视觉投影文件 |
 | `dynamicDecayEnabled` | `false` | 是否启用近期命中热度衰减 |
 | `decayFrequencyWindowMs` | 7 天 | 命中频率的平滑窗口 |
 | `decayRecencyHalfLifeMs` | 14 天 | 最近一次访问的权重半衰期 |

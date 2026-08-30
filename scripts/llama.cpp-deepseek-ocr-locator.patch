@@ -1,0 +1,46 @@
+diff --git a/conversion/base.py b/conversion/base.py
+index daae28e..a163621 100644
+--- a/conversion/base.py
++++ b/conversion/base.py
+@@ -1421,7 +1421,11 @@ class TextModel(ModelBase):
+         toktypes: list[int] = []
+ 
+         from transformers import AutoTokenizer
+-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
++        try:
++            tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
++        except Exception:
++            tokenizer = AutoTokenizer.from_pretrained(
++                os.environ.get("DEEPSEEK_OCR_REPO", "unsloth/DeepSeek-OCR"), trust_remote_code=True)
+         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))  # ty: ignore[unresolved-attribute]
+         assert max(tokenizer.vocab.values()) < vocab_size  # ty: ignore[unresolved-attribute]
+ 
+diff --git a/conversion/deepseek.py b/conversion/deepseek.py
+index 225f864..3399d69 100644
+--- a/conversion/deepseek.py
++++ b/conversion/deepseek.py
+@@ -270,7 +270,14 @@ class DeepseekV2Model(TextModel):
+             pass
+ 
+         from transformers import AutoTokenizer
+-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
++        try:
++            tokenizer = AutoTokenizer.from_pretrained(self.dir_model, trust_remote_code=True)
++        except Exception:
++            try:
++                tokenizer = AutoTokenizer.from_pretrained('unsloth/DeepSeek-OCR', trust_remote_code=True)
++            except Exception:
++                from transformers import PreTrainedTokenizerFast
++                tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(self.dir_model / 'tokenizer.json'))
+         tokpre = self.get_vocab_base_pre(tokenizer)
+ 
+         if tokpre == "kimi-k2":
+@@ -314,7 +321,7 @@ class DeepseekV2Model(TextModel):
+             special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=False)
+             special_vocab.add_to_gguf(self.gguf_writer)
+         else:
+-            raise NotImplementedError(f"Deepseek pre-tokenizer {tokpre!r} is not supported yet!")
++            self._set_vocab_gpt2()
+ 
+     def set_gguf_parameters(self):
+         is_ocr = (self.model_arch == gguf.MODEL_ARCH.DEEPSEEK2OCR)
