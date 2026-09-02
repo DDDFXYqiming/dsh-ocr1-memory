@@ -91,6 +91,8 @@ Override the needed options in the profile's `cordis.patch.yml`.
 
 To let the plugin manage a real CPU `llama-server`, set `autoStartOcrServer` to `true` and provide both `ocrServerPath` and `ocrModelDir`. If `ocrBaseUrl` contains an explicit port, that port is authoritative for health checks and launch. Embedding retrieval stays out of the main retrieval path by default. To reuse the same service, leave `ocrEmbeddingBaseUrl` empty. A trained locator can auto-start on a separate endpoint through `opticalLocatorAutoStart`, and `OPTICAL_LOCATOR_MODEL_DIR` can provide its model directory.
 
+**Environment-variable fallbacks** (applied only when the matching Config field is empty; Config always wins. Aimed at source runs and scripts — profile deployments should keep everything in cordis.yml): `OCR_SERVER_PATH` (default server path for ocr/embedding/locator), `OCR_MODEL_DIR` / `OCR_EMBEDDING_MODEL_DIR` (model directories), `OPTICAL_LOCATOR_MODEL_DIR` (locator model directory), `PYTHON` (renderer executable).
+
 Advanced options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
 
 ## Installation

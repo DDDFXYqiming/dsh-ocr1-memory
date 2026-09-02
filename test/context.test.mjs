@@ -111,6 +111,7 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
       { id: 'registered', source: 'test', tier: 'vivid', hits: 1, segments: [{ id: 1, content: 'registered context' }] },
     ] }), 'utf8')
     const registeredTools = []
+    const effects = []
     let contribution = null
     const ctx = {
       tools: {
@@ -126,12 +127,13 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
         },
       },
       effect(factory) {
-        return factory()
+        const disposer = factory()
+        if (typeof disposer === 'function') effects.push(disposer)
       },
     }
 
     assert.deepEqual(inject, ['tools', 'systemPrompt', 'skills', 'agents', 'sessionQuery'])
-    const dispose = apply(ctx, {
+    apply(ctx, {
       storeDir: t.dir,
       memoryDir: t.dir,
       useMockRenderer: true,
@@ -151,7 +153,7 @@ test('plugin registers an opt-in synchronous system-prompt context', async () =>
     assert.equal(contribution?.name, 'ocr1-memory:context')
     assert.equal(typeof contribution?.text, 'function')
     assert.match(contribution.text({}), /registered context/)
-    await dispose()
+    for (const f of effects) await f()
     assert.equal(contribution, null)
   } finally {
     t.cleanup()

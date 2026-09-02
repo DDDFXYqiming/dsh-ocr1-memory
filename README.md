@@ -92,6 +92,8 @@
 
 想让插件自己管一个真实的 CPU `llama-server`，把 `autoStartOcrServer` 设为 `true`，同时提供 `ocrServerPath` 和 `ocrModelDir`。`ocrBaseUrl` 里写了显式端口的话，健康检查和启动都以它为准。Embedding 默认不参与主检索，复用同一个服务时把 `ocrEmbeddingBaseUrl` 留空即可。训练后的 Locator 可以通过 `opticalLocatorAutoStart` 在独立 endpoint 自动启动，模型目录也可以交给 `OPTICAL_LOCATOR_MODEL_DIR` 提供。
 
+**环境变量回退**（仅在对应 Config 字段留空时生效，Config 永远优先；面向源码直跑/脚本场景，profile 部署建议全部走 cordis.yml）：`OCR_SERVER_PATH`（ocr/embedding/locator 的 serverPath 默认）、`OCR_MODEL_DIR` / `OCR_EMBEDDING_MODEL_DIR`（模型目录）、`OPTICAL_LOCATOR_MODEL_DIR`（locator 模型目录）、`PYTHON`（渲染器直调时的 python 可执行文件）。
+
 高级选项见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
 
 ## 安装

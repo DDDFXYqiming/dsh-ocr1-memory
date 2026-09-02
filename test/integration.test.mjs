@@ -14,6 +14,7 @@ async function makeContext() {
   const skills = []
   const prompts = []
   const injected = []
+  const effects = []
   const agent = { id: 'agent-a', inject(value) { injected.push(value) } }
   const services = {
     agents: { get(id) { return id === agent.id ? agent : null } },
@@ -39,7 +40,8 @@ async function makeContext() {
       },
     },
     effect(factory) {
-      return factory()
+      const disposer = factory()
+      if (typeof disposer === 'function') effects.push(disposer)
     },
     get(name) {
       return services[name]
@@ -54,7 +56,7 @@ async function makeContext() {
       }
     },
   }
-  const dispose = apply(ctx, {
+  apply(ctx, {
     storeDir: dir,
     memoryDir: dir,
     useMockRenderer: true,
@@ -75,9 +77,8 @@ async function makeContext() {
     skills,
     prompts,
     injected,
-    dispose,
     async close() {
-      await dispose()
+      for (const f of effects) await f()
       await rm(dir, { recursive: true, force: true })
     },
   }
