@@ -80,4 +80,4 @@
 3. 论文规模训练以及 Mind2Web、AppWorld、RULER 等完整主表评测；
 4. 任意硬件、驱动、量化或服务托管组合下的普遍性能保证。
 
-这些项目需要不同的模型内部访问、数据/评测资源或平台条件；不应把当前小规模端到端验证写成论文主表复现。当前本机以 Windows CPU-only `llama-server` 验证了 OCR/embedding 端到端路径；无真实后端时，8 个依赖服务的用例会跳过而不是伪造通过。平台细节和已验证的模型转换路线见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+这些项目需要不同的模型内部访问、数据/评测资源或平台条件；不应把当前小规模端到端验证写成论文主表复现。当前测试环境以 Windows CPU-only `llama-server` 验证了 OCR/embedding 端到端路径；无真实后端时，8 个依赖服务的用例会跳过而不是伪造通过。平台细节和已验证的模型转换路线见 [DEPLOYMENT.md](DEPLOYMENT.md)。

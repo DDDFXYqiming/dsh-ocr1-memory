@@ -39,7 +39,7 @@
 - profile 使用 `ocrBaseUrl=http://127.0.0.1:18080/v1`、`requireOcr=true`、`autoStartOcrServer=true`；OCR 与 embedding 共用 CPU-only `llama-server`。
 - `ocr1_mem_status`、`ocr1_mem_calibrate` 和真实图像 embedding 均成功；校准基线为 `prompt_tokens=5`，独立 embedding probe 为 1280 维、`prompt_tokens=785`、直接视觉 token=784。
 - 连续 `memory_maintain` 每批最多刷新 8 条并返回 `remaining`/`complete`；重复 namespace 维护不会并发执行，取消和卸载会等待已拥有的任务。
-- 上述是本机运行证据；更换模型、量化、后端或服务参数时应重新验收。
+- 上述是测试环境运行证据；更换模型、量化、后端或服务参数时应重新验收。
 
 ## 单元测试覆盖
 
@@ -195,7 +195,7 @@ content: "Orbit API 需要登录并携带 token。"
 3. 启动取消或健康检查超时会回收本次 spawn 的进程；插件 dispose 会取消 pending startup、等待 startup task，并停止记录过的自启动 PID；
 4. 已运行的外部服务只返回 `already-up`，不会被插件卸载。
 
-端到端本机配置使用 `http://127.0.0.1:18080/v1`，OCR 与 embedding 可共用一个 CPU-only 服务。
+端到端测试环境配置使用 `http://127.0.0.1:18080/v1`，OCR 与 embedding 可共用一个 CPU-only 服务。
 
 ## 对比基准：dsh-ocr1-memory vs dsh-memory
 
@@ -226,7 +226,7 @@ content: "Orbit API 需要登录并携带 token。"
 
 ### 1. 结论
 
-在本机当前运行条件下，记忆系统的核心闭环可以正常工作：
+在测试环境当前运行条件下，记忆系统的核心闭环可以正常工作：
 
 ```text
 store → SoM 图像与原文持久化 → tier 刷新 → 检索 → segment Fetch → verbatim 返回
@@ -249,12 +249,12 @@ store → SoM 图像与原文持久化 → tier 刷新 → 检索 → segment Fe
 
 ### 2. 无独立显卡运行结论
 
-记忆系统本身不要求本机独显：
+记忆系统本身不要求测试环境独显：
 
 - DSH 插件的 Node.js 逻辑、JSON 持久化、tier 管理、context 快照和 Python/Pillow 渲染都可由 CPU 完成；
 - OCR、Locate 和视觉 embedding 是外部服务，当前已验证的运行方案是 Windows **CPU-only llama.cpp**，OCR 与 embedding 共用一个 CPU 服务，不依赖 RX 7800 XT 独显；
 - 如果不配置 OCR 后端且 `requireOcr=false`，文本记忆路径仍可工作；需要 OCR、Locate 或视觉 embedding 时才需要对应服务；
-- LoRA 训练是独立的开发流程，本机训练时使用过独显，但普通运行不需要重新训练，因此不构成运行时依赖。
+- LoRA 训练是独立的开发流程，测试环境训练时使用过独显，但普通运行不需要重新训练，因此不构成运行时依赖。
 
 核显不是必需条件。若采用带 Vulkan 后端的 llama.cpp，可以把核显作为可选加速设备，但本报告的真实运行证据是 CPU-only 路径，尚未把当前插件的全部 OCR/embedding/定位链在核显上单独验收。要保证不使用独显，应将 `OCR_SERVER_PATH`/`ocrServerPath` 指向 CPU-only 的 `llama-server`；通用 PATH 解析本身不会替你选择 GPU 或核显。
 

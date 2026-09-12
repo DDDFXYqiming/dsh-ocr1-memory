@@ -24,17 +24,17 @@ node scripts/ensure-ocr-server.mjs <port>
 powershell -File scripts/start-ocr-server.ps1
 ```
 
-脚本会检查健康状态，必要时以 detached 子进程启动 `llama-server`。也可以通过 `autoStartOcrServer` 让插件加载时自动确保服务在线；模型目录和可执行文件通过 `ocrModelDir`、`ocrServerPath`、`OCR_MODEL_DIR`、`OCR_SERVER_PATH` 或 PATH 提供。仓库不包含本机绝对路径；服务不在线且未提供模型目录时，启动会明确报错。
+脚本会检查健康状态，必要时以 detached 子进程启动 `llama-server`。也可以通过 `autoStartOcrServer` 让插件加载时自动确保服务在线；模型目录和可执行文件通过 `ocrModelDir`、`ocrServerPath`、`OCR_MODEL_DIR`、`OCR_SERVER_PATH` 或 PATH 提供。仓库不包含测试环境绝对路径；服务不在线且未提供模型目录时，启动会明确报错。
 
-典型的本机 CPU-only 配置（路径按机器替换）如下：
+典型的测试环境 CPU-only 配置（路径按机器替换）如下：
 
 ```yaml
 ocrBaseUrl: 'http://127.0.0.1:18080/v1'
 ocrEmbeddingBaseUrl: 'http://127.0.0.1:18080/v1' # combined chat + embeddings
 requireOcr: true
 autoStartOcrServer: true
-ocrServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
-ocrModelDir: 'D:/models/deepseek-ocr-gguf'
+ocrServerPath: '<cpu-server-executable>'
+ocrModelDir: '<ocr-model-directory>'
 ocrServerPort: 18080
 embeddingRetrieval: false
 ```
@@ -63,7 +63,7 @@ python <llama.cpp>/convert_hf_to_gguf.py <merged> --outfile deepseek-ocr-locator
 python <llama.cpp>/convert_hf_to_gguf.py <merged> --mmproj --outfile mmproj-locator-q8_0.gguf --outtype q8_0
 ```
 
-当前补丁针对已验证的 llama.cpp `b19cbe925be361d229f0fe03435affe4a2717f37`，补充 transformers 4.57.2 本地 remote-code tokenizer 回退和 DeepSeek-OCR 词表转换。Q8_0 转换本身即量化步骤；本机对比中 Q4 会淹没小幅 LoRA 增量，已验证发布形态为合并后的 Q8_0 GGUF。
+当前补丁针对已验证的 llama.cpp `b19cbe925be361d229f0fe03435affe4a2717f37`，补充 transformers 4.57.2 本地 remote-code tokenizer 回退和 DeepSeek-OCR 词表转换。Q8_0 转换本身即量化步骤；测试环境对比中 Q4 会淹没小幅 LoRA 增量，已验证发布形态为合并后的 Q8_0 GGUF。
 
 独立 Locator 服务可由插件管理：
 
@@ -72,12 +72,12 @@ opticalLocatorEnabled: true
 opticalLocatorBaseUrl: 'http://127.0.0.1:18081/v1'
 opticalLocatorModel: 'deepseek-ocr-memory'
 opticalLocatorAutoStart: true
-opticalLocatorServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
-opticalLocatorModelDir: 'D:/models/deepseek-ocr-locator-gguf'
+opticalLocatorServerPath: '<cpu-server-executable>'
+opticalLocatorModelDir: '<locator-model-directory>'
 opticalLocatorServerPort: 18081
 ```
 
-Locator endpoint 应与基础 OCR endpoint 分离。部署质量可用 `npm run eval:locator-http -- --manifest <eval.jsonl> --base-url http://127.0.0.1:18081/v1` 复测严格 K-bit、exact 和 mean F1。在本机验证中，LoRA 训练和模型合并路线已经打通；小规模样本可以改善定位，但不代表论文规模的统计复现。
+Locator endpoint 应与基础 OCR endpoint 分离。部署质量可用 `npm run eval:locator-http -- --manifest <eval.jsonl> --base-url http://127.0.0.1:18081/v1` 复测严格 K-bit、exact 和 mean F1。在测试环境验证中，LoRA 训练和模型合并路线已经打通；小规模样本可以改善定位，但不代表论文规模的统计复现。
 
 ## 4. 视觉 embedding
 
@@ -99,11 +99,11 @@ Embedding 与 OCR 使用同一 endpoint 时，插件复用 OCR server；独立 e
 
 记忆系统本身不依赖独立显卡。插件逻辑、JSON 持久化、tier 管理、同步 context 快照和 Python/Pillow 图像渲染均可由 CPU 完成；OCR、Locate 和视觉 embedding 则由外部 llama.cpp/vLLM 服务提供。
 
-本机已验证的运行方案是 Windows CPU-only llama.cpp：OCR 与 embedding 共用一个 CPU 服务，运行时不占用 RX 7800 XT。LoRA 训练属于独立的开发流程，训练时可以使用 GPU，但部署已合并的模型和日常存取不需要重新训练。
+Windows CPU-only llama.cpp 可为 OCR 与 embedding 提供共用服务，运行时不需要独立 GPU。LoRA 训练属于独立的开发流程，训练时可以使用 GPU，但部署已合并的模型和日常存取不需要重新训练。
 
 若不配置 OCR 后端且 `requireOcr=false`，文本记忆路径仍可使用。需要 OCR、Locate 或视觉 embedding 时，才需要启动对应服务。
 
-核显是可选加速设备，不是必要条件。带 Vulkan 后端的 llama.cpp 理论上可以使用核显，但当前本机真实验收覆盖的是 CPU-only 路径，没有把完整链路单独归因到核显。要保证不使用独显，应把 `OCR_SERVER_PATH` 或 `ocrServerPath` 指向 CPU-only `llama-server`；仅使用 PATH 解析不会自动选择 CPU、核显或独显。
+核显是可选加速设备，不是必要条件。带 Vulkan 后端的 llama.cpp 理论上可以使用核显，但当前测试环境真实验收覆盖的是 CPU-only 路径，没有把完整链路单独归因到核显。要保证不使用独显，应把 `OCR_SERVER_PATH` 或 `ocrServerPath` 指向 CPU-only `llama-server`；仅使用 PATH 解析不会自动选择 CPU、核显或独显。
 
 注意：这只描述 OCR1 记忆服务的硬件依赖；DSH 使用的其他主模型是否占用独显，属于另一条链路。
 

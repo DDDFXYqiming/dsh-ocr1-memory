@@ -226,7 +226,7 @@ The local end-to-end configuration uses `http://127.0.0.1:18080/v1`; OCR and emb
 
 ### 1. Conclusion
 
-Under the current operating conditions on this machine, the memory system’s core closed loop works correctly:
+Under the current operating conditions on the test environment, the memory system’s core closed loop works correctly:
 
 ```text
 store → SoM image and original-text persistence → tier refresh → retrieval → segment Fetch → verbatim return

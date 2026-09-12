@@ -35,8 +35,8 @@ ocrBaseUrl: 'http://127.0.0.1:18080/v1'
 ocrEmbeddingBaseUrl: 'http://127.0.0.1:18080/v1' # combined chat + embeddings
 requireOcr: true
 autoStartOcrServer: true
-ocrServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
-ocrModelDir: 'D:/models/deepseek-ocr-gguf'
+ocrServerPath: '<cpu-server-executable>'
+ocrModelDir: '<ocr-model-directory>'
 ocrServerPort: 18080
 embeddingRetrieval: false
 ```
@@ -72,8 +72,8 @@ opticalLocatorEnabled: true
 opticalLocatorBaseUrl: 'http://127.0.0.1:18081/v1'
 opticalLocatorModel: 'deepseek-ocr-memory'
 opticalLocatorAutoStart: true
-opticalLocatorServerPath: 'D:/models/llama.cpp-cpu/llama-server.exe'
-opticalLocatorModelDir: 'D:/models/deepseek-ocr-locator-gguf'
+opticalLocatorServerPath: '<cpu-server-executable>'
+opticalLocatorModelDir: '<locator-model-directory>'
 opticalLocatorServerPort: 18081
 ```
 
@@ -99,7 +99,7 @@ When OCR and embeddings share an endpoint, the plugin reuses one server. A separ
 
 The memory system itself does not require a discrete GPU. The plugin logic, JSON persistence, tier management, synchronous context snapshots, and Python/Pillow rendering can run on the CPU. OCR, locating, and visual embeddings are supplied by an external llama.cpp or vLLM service.
 
-The locally validated runtime uses a Windows CPU-only llama.cpp server for both OCR and embeddings, without using the RX 7800 XT. LoRA training is a separate development workflow: it can use a GPU, but normal deployment of a merged model and day-to-day memory operations do not require retraining.
+A Windows CPU-only llama.cpp server can serve both OCR and embeddings without a discrete GPU. LoRA training is a separate development workflow: it can use a GPU, but normal deployment of a merged model and day-to-day memory operations do not require retraining.
 
 With no OCR backend and `requireOcr=false`, the text-memory path remains available. OCR, locating, and visual embeddings require their corresponding service.
 

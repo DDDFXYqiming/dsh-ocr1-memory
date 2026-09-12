@@ -141,7 +141,7 @@ Here, “not implemented” should be understood as: **the current version does 
 | Paper-scale training | A small-scale LoRA locator closed loop has been completed | Paper-scale training requires more data, more compute time, a stable long-running inference service, and consistent data and training protocols |
 | Complete benchmark reproduction | R1–R6 and local isolated tests are available | Long-horizon benchmarks such as Mind2Web, AppWorld, and RULER require complete data, evaluation environments, and experimental conditions consistent with the paper |
 
-## 8. Why These Limitations Are Related to the Local Machine
+## 8. Why These Limitations Are Related to the Test Environment
 
 ### 8.1 Internal Tensors Are Not an Ordinary Plugin Feature
 
@@ -165,13 +165,13 @@ This is already a new model backend engineering project and cannot be completed 
 
 ### 8.2 The Embedding Issue Is Not Simply a GPU Issue
 
-The local machine can already run interface-level visual embeddings and can also conduct some LoRA experiments. Therefore, the limitation is not that “AMD GPUs absolutely cannot do this.” The actual issue is that the current backend does not expose the official internal representations, and there is insufficient evidence to prove that the pooled embeddings returned by the interface are fully consistent with the internal embeddings in the paper.
+The test environment can already run interface-level visual embeddings and can also conduct some LoRA experiments. Therefore, the limitation is not that “AMD GPUs absolutely cannot do this.” The actual issue is that the current backend does not expose the official internal representations, and there is insufficient evidence to prove that the pooled embeddings returned by the interface are fully consistent with the internal embeddings in the paper.
 
 Further progress would require a Transformers/native inference path that allows model hooks, together with consistency calibration between the official implementation and the current backend's output.
 
 ### 8.3 Paper Scale Is a Resource and Protocol Issue
 
-Small-scale training on the local machine has already demonstrated that:
+Small-scale training on the test environment has already demonstrated that:
 
 ```text
 SoM data → image input → binary supervision → LoRA → strict decoding → localization evaluation
