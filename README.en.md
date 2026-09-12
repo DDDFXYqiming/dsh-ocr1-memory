@@ -125,7 +125,13 @@ Set `ocrBaseUrl` and OCR is ready to use. With `requireOcr: false`, an unavailab
 
 The current `npm test` run is 88/88 when the live backend is available (real-backend cases skip otherwise).
 
-## References
+## Local tool paths
+
+Migration defaults use `.dsh/memory` and `.dsh/ocr1-memory` under the current home directory. Override them with `OLD_MEMORY_ROOT` and `OCR1_STORE_DIR`. Curated migration also accepts `OLD_MEMORY_NAMESPACE`, defaulting to the current system username. The renderer path is resolved from the script location, independently of the working directory.
+
+`scripts/build.sh` only attempts profile-link repair when `DSH_PROFILE_NODE_MODULES` is explicitly configured.
+
+## Further references
 
 - [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR) · [paper](https://arxiv.org/abs/2510.18234)
 - [OCR-Memory](https://arxiv.org/abs/2604.26622)

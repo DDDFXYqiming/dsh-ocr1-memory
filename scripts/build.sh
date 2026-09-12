@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build dsh-ocr1-memory: plain ESM plugin — no tsc host compilation.
-# Validates all modules and self-heals the profile junction link.
+# Validates modules and optionally repairs an explicitly configured profile link.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,8 +10,8 @@ echo "=== Syntax check (node --check, all modules) ==="
 npm run build
 
 echo "=== Self-heal profile junction ==="
-PROFILE_NM="${DSH_PROFILE_NODE_MODULES:-C:/Users/39795/.dsh/profiles/web/node_modules}"
-if [ -d "$PROFILE_NM/@dsh-external" ]; then
+PROFILE_NM="${DSH_PROFILE_NODE_MODULES:-}"
+if [ -n "$PROFILE_NM" ] && [ -d "$PROFILE_NM/@dsh-external" ]; then
   TARGET_WIN="$(cygpath -w "$ROOT" 2>/dev/null || (cd "$ROOT" && pwd -W 2>/dev/null) || echo "$ROOT")"
   LINK="$PROFILE_NM/@dsh-external/dsh-ocr1-memory"
   node -e "

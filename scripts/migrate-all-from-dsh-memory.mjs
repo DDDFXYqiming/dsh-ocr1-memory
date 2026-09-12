@@ -1,11 +1,13 @@
 // Import every Markdown memory from the legacy dsh-memory store.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { join, relative } from 'node:path'
 import { createMemoryStore, createRenderer, DEFAULT_TIERS, splitSegments } from '../lib/core.js'
 
-const OLD_ROOT = process.env.OLD_MEMORY_ROOT || 'C:\\Users\\39795\\.dsh\\memory'
-const STORE_DIR = process.env.OCR1_STORE_DIR || 'C:\\Users\\39795\\.dsh\\ocr1-memory'
-const RENDER_SCRIPT = join(process.cwd(), 'scripts', 'render_memory.py')
+const OLD_ROOT = process.env.OLD_MEMORY_ROOT || join(homedir(), '.dsh', 'memory')
+const STORE_DIR = process.env.OCR1_STORE_DIR || join(homedir(), '.dsh', 'ocr1-memory')
+const RENDER_SCRIPT = fileURLToPath(new URL('./render_memory.py', import.meta.url))
 const MAX_SEGMENTS_PER_IMAGE = 12
 
 function collectMarkdown(root) {

@@ -126,7 +126,13 @@ dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
 
 当前 `npm test` 为 88/88 通过（无后端时真实后端用例会跳过）。
 
-## 参考
+## 本地工具路径
+
+迁移脚本默认使用当前用户主目录下的 `.dsh/memory` 与 `.dsh/ocr1-memory`，可通过 `OLD_MEMORY_ROOT` 和 `OCR1_STORE_DIR` 覆盖。精选迁移还支持 `OLD_MEMORY_NAMESPACE`，默认使用当前系统用户名。渲染脚本位置从迁移脚本自身目录解析，与启动命令时的工作目录无关。
+
+`scripts/build.sh` 默认只检查构建。只有显式提供 `DSH_PROFILE_NODE_MODULES` 时，才尝试修复对应 profile 的插件链接。
+
+## 参考资料
 
 - [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR) · [论文](https://arxiv.org/abs/2510.18234)
 - [OCR-Memory](https://arxiv.org/abs/2604.26622)

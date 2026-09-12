@@ -1,21 +1,25 @@
 // Migrate curated content from the legacy dsh-memory store into dsh-ocr1-memory.
 //
 // Scope:
-//   - facts.md sections (root + namespace 39795)
-//   - SOP files under <old>/sops and <old>/39795/sops
+//   - facts.md sections (root + the selected namespace)
+//   - SOP files under <old>/sops and <old>/<namespace>/sops
 //   - root memory_management_sop.md
 // Pending/archive/history files are intentionally not migrated.
 //
 // Usage:
 //   node scripts/migrate-from-dsh-memory.mjs
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { homedir, userInfo } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { join, basename, extname } from 'node:path'
 import { createMemoryStore, createRenderer, createEmbeddingHttpClient, DEFAULT_TIERS } from '../lib/core.js'
 
-const OLD_ROOT = process.env.OLD_MEMORY_ROOT || 'C:\\Users\\39795\\.dsh\\memory'
-const STORE_DIR = process.env.OCR1_STORE_DIR || 'C:\\Users\\39795\\.dsh\\ocr1-memory'
+const OLD_ROOT = process.env.OLD_MEMORY_ROOT || join(homedir(), '.dsh', 'memory')
+const STORE_DIR = process.env.OCR1_STORE_DIR || join(homedir(), '.dsh', 'ocr1-memory')
 const EMBEDDING_BASE = process.env.OCR1_EMBEDDING_BASE || 'http://127.0.0.1:18080/v1'
-const RENDER_SCRIPT = join(process.cwd(), 'scripts', 'render_memory.py')
+const RENDER_SCRIPT = fileURLToPath(new URL('./render_memory.py', import.meta.url))
+const LEGACY_NAMESPACE = process.env.OLD_MEMORY_NAMESPACE || userInfo().username
+if (!LEGACY_NAMESPACE || ['.', '..'].includes(LEGACY_NAMESPACE) || /[\\/]/.test(LEGACY_NAMESPACE)) throw new Error('OLD_MEMORY_NAMESPACE must be a directory name')
 const MAX_ITEMS = Number(process.env.MAX_ITEMS || 0)
 const NO_EMBEDDING = process.env.OCR1_NO_EMBEDDING === '1'
 const ONLY_SOPS = process.env.ONLY_SOPS === '1'
@@ -51,7 +55,7 @@ function parseFactsSections(filePath, prefix) {
 }
 
 function collectSopFiles() {
-  const dirs = [join(OLD_ROOT, 'sops'), join(OLD_ROOT, '39795', 'sops')]
+  const dirs = [join(OLD_ROOT, 'sops'), join(OLD_ROOT, LEGACY_NAMESPACE, 'sops')]
   const files = []
   for (const dir of dirs) {
     if (!existsSync(dir)) continue
@@ -77,7 +81,7 @@ async function main() {
   if (!ONLY_SOPS) {
     items.push(
       ...parseFactsSections(join(OLD_ROOT, 'facts.md'), 'fact-root'),
-      ...parseFactsSections(join(OLD_ROOT, '39795', 'facts.md'), 'fact-ns'),
+      ...parseFactsSections(join(OLD_ROOT, LEGACY_NAMESPACE, 'facts.md'), 'fact-ns'),
     )
   }
   items.push(...collectSopFiles())
