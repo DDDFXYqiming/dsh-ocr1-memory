@@ -1,192 +1,110 @@
 [Chinese](../docs/OPTICAL_MEMORY_WORKFLOW.md) | English
 
-# Optical Memory Plugin Workflow and Unimplemented Boundaries
+# Optical Memory Plugin Workflow and Current Boundaries
 
-> This document explains the plugin workflow and the current boundaries of the reproduction.
+This document describes how `@dsh-external/dsh-ocr1-memory` writes, ages, and retrieves memories, together with the evidence boundary of the current release.
 
-## 1. Conclusion First
+## 1. Workflow overview
 
-The core idea of `@dsh-external/dsh-ocr1-memory` is:
+The plugin stores each source segment as persistent text and also renders an image with SoM numbers. Images support resolution aging and optional localization. The final Fetch reads the numbered segment from `memories.json`, so the returned content remains verbatim.
 
 ```text
-Raw text → segment and number → render as SoM images → reduce resolution based on age
-Query → inspect images and locate relevant numbers → read the original text by number → return it verbatim
+Raw text → split and number → render SoM image → adjust resolution by age
+Query → match text or locate image numbers → read memories.json → return source text
 ```
-
-Images are representations used for compression and localization, while the original segments stored in `memories.json` are the authoritative source for the final Fetch. Therefore, the plugin does not have the model rewrite memory content; instead, it returns the persisted verbatim original text whenever possible.
-
-## 2. Overall Workflow Diagram
 
 ```mermaid
 flowchart TD
-    A[Agent produces a piece of memory] --> B[ocr1_mem_store]
+    A[Agent produces a memory] --> B[ocr1_mem_store]
     B --> C[Split by blank lines and length]
     C --> D[Assign SoM numbers to segments]
-    D --> E[Render as numbered images]
-    C --> F[(memories.json<br/>Original text and metadata)]
+    D --> E[Render numbered images]
+    C --> F[(memories.json<br/>Source text and metadata)]
     E --> G[(Images and render cache)]
     E -.Optional.-> H[OCR / Visual Embedding]
-
-    F --> I[Decay based on time and optional activity]
+    F --> I[Adjust tier by time and optional activity]
     I --> J[vivid 1280<br/>normal 1024<br/>fuzzy 640]
-
     Q[Agent submits a query] --> R[Refresh current tier]
     R --> S{Optical locator enabled?}
-    S -- No --> T[Text matching<br/>OCR evidence<br/>Optional Embedding]
-    S -- Yes --> U[Send SoM images to the locator model]
+    S -- No --> T[Text matching<br/>OCR evidence<br/>Optional embedding]
+    S -- Yes --> U[Send SoM image to locator]
     U --> V[Output K-bit 0/1 labels]
-    V --> W[Parse probabilities and filter by threshold / Top-K]
+    V --> W[Parse probabilities and filter by threshold or Top-K]
     T --> X[Candidate segment numbers]
     W --> X
-    X --> Y[Fetch original text by number from memories.json]
-    Y --> Z[Return verbatim text]
-    Z --> AA{Low-resolution memory hit?}
+    X --> Y[Read memories.json by number]
+    Y --> Z[Return source text]
+    Z --> AA{Low-resolution hit?}
     AA -- Yes --> AB[active recall<br/>Re-render as vivid]
     AA -- No --> AC[Record hits and access history]
-
     F -.Optional.-> AD[Sync systemPrompt.context snapshot]
     AD -.Entry and character limits.-> AE[Inject into current Prompt]
 ```
 
-## 3. Write Stage
+## 2. Write and aging stages
 
-After `ocr1_mem_store` is called, the plugin:
+When `ocr1_mem_store` runs, the plugin splits input by blank lines and maximum length, assigns stable sequential numbers, renders SoM images, and stores the source text, tier, image paths, and hit counts. OCR evidence and visual embeddings are controlled by configuration.
 
-1. Splits the input into multiple segments based on blank lines and the maximum length;
-2. Assigns a stable sequential number to each segment;
-3. Renders these segments as square images with SoM (Set of Mark) numbers;
-4. Saves metadata such as the original text, segments, tier, image paths, and hit counts to the store;
-5. Optionally generates OCR evidence or visual embeddings according to the configuration.
+The default image tiers are:
 
-The original text remains on disk. This does not mean placing all original text into the current Prompt; rather, it allows the final step to retrieve the text precisely by number, avoiding omissions or hallucinations caused by generative paraphrasing.
-
-## 4. Memory Aging Stage
-
-The plugin uses three image tiers by default:
-
-| Tier | Image Width | Intended Use |
+| Tier | Image width | Intended use |
 |---|---:|---|
 | `vivid` | 1280 | New memories and high-precision reading |
 | `normal` | 1024 | Memories after the first aging stage |
-| `fuzzy` | 640 | Long-term memory with lower visual cost |
+| `fuzzy` | 640 | Long-term memories at lower visual cost |
 
-The default time boundaries are approximately as follows: new memories remain `vivid` for 1 day, then enter `normal`, and enter `fuzzy` after 7 days. These widths reference the naming and tier idea of the official DeepSeek-OCR Large, Base, and Small resolution modes; the plugin's image storage and tier management are engineering implementations and are not equivalent to directly exporting the DeepEncoder's internal tokens.
+New memories remain `vivid` for about one day, enter `normal` after that, and enter `fuzzy` after about seven days. The widths borrow the tier naming used by DeepSeek-OCR. Image storage and tier management are plugin behavior and do not expose DeepEncoder tokens.
 
-`dynamicDecayEnabled` can also be enabled optionally:
+With `dynamicDecayEnabled`, the plugin keeps a limited access history so recently and frequently used memories decay more slowly. It is disabled by default to preserve behavior when an old manifest is upgraded.
 
-- Record a limited number of access timestamps;
-- Memories accessed recently and frequently decay more slowly;
-- Use exponential weights and a multiplier cap to avoid making a memory “permanently high-resolution after a single access”;
-- Keep it disabled by default to preserve compatibility after upgrading an old manifest.
+## 3. Retrieval
 
-## 5. Retrieval Stage
+Without the optical locator, retrieval uses text-token overlap and can add OCR text, visual-embedding similarity, and active recall after a low-resolution hit. `requireOcr: false` keeps the text path when OCR is unavailable. `requireOcr: true` reports the OCR failure directly.
 
-### 5.1 Without the Optical Locator Enabled
+With the optical locator, the plugin sends the current-tier SoM image to the locator model. The model returns a K-length `0/1` sequence. The plugin parses labels and probabilities, filters segments by threshold, and uses Top-K when there are no threshold hits. It then reads the source text from `memories.json` by segment number. The model does not regenerate the memory. This follows the Locate-and-Transcribe flow in the [OCR-Memory paper](https://arxiv.org/html/2604.26622v1).
 
-The plugin can use text token overlap for candidate recall and, depending on the configuration, add:
+When a `normal` or `fuzzy` image is selected, active recall re-renders that memory as `vivid`, records `hits`, `lastAccessAt`, and a limited `accessHistory`, and applies a short grace period before another downgrade.
 
-- Text read back by OCR as visual evidence;
-- Visual embedding similarity only when `embeddingRetrieval: true`;
-- active recall after a low-resolution hit.
+## 4. Prompt context and maintenance
 
-With `requireOcr: false`, an unavailable OCR backend preserves the text path; with `requireOcr: true`, OCR read-back failure is reported instead of silently degrading.
+When `autoInjectContext` is enabled, the plugin registers a synchronous callback through DSH's `systemPrompt.context()`. It reads the local manifest, sorts by hit count and recent access, and respects `contextMaxEntries` and `contextMaxChars`. The callback performs no OCR, embedding, network request, or asynchronous retrieval. A corrupt manifest produces empty context without blocking prompt assembly.
 
-### 5.2 With the Optical Locator Enabled
+The default `contextMode: index` injects L1 and optical metadata. `contextMode: snapshot` keeps body snapshots as well, which uses more model context and session storage.
 
-This path is closer to the OCR-Memory paper:
+`memory_maintain` and automatic maintenance run single-flight per namespace, refresh at most `maintenanceBatchSize` optical entries per run, and return `remaining` and `complete`. Maintenance, rendering, OCR, embedding, and server startup support cooperative cancellation. On disposal, only processes started and recorded by the plugin are stopped; an external OCR server remains running.
 
-1. Send the SoM image at the current tier for each memory to the locator model;
-2. The model outputs a `0/1` relevance sequence of length K;
-3. The plugin strictly parses the labels and probabilities;
-4. Filter relevant segments using a threshold, with Top-K as a fallback when there are no hits;
-5. Read the original text from `memories.json` according to the segment number;
-6. Return the original text without having the model regenerate the answer.
+## 5. Current delivery boundary
 
-This corresponds to **Locate-and-Transcribe** in the paper: first locate the visual region, then transcribe the corresponding original text. [OCR-Memory paper](https://arxiv.org/html/2604.26622v1)
-
-### 5.3 Active recall
-
-If the hit is a `normal` or `fuzzy` image, the plugin:
-
-- Re-renders that memory as `vivid`;
-- Records `hits`, `lastAccessAt`, and a limited `accessHistory`;
-- Prevents it from being downgraded again immediately during a brief grace period.
-
-## 6. Optional Prompt Context
-
-After `autoInjectContext` is enabled, the plugin registers a dynamic context through DSH's `systemPrompt.context()`:
-
-- Synchronously reads the local manifest;
-- Sorts by hit count and most recent access time;
-- Is limited by `contextMaxEntries` and `contextMaxChars`;
-- Does not perform OCR, embedding, network requests, or asynchronous retrieval;
-- Returns empty content when the manifest is corrupted, without blocking Prompt assembly.
-
-This path “automatically provides a small number of memory summaries”; it does not replace the complete `ocr1_mem_retrieve`. The default `contextMode: index` injects only L1/optical metadata (never bodies); `contextMode: snapshot` uses this full-body summary path, which consumes more model context and session records and must be enabled explicitly.
-
-### 6.1 Maintenance, cancellation, and server lifecycle
-
-- `memory_maintain` and automatic maintenance are single-flight per namespace; each run refreshes at most `maintenanceBatchSize` optical entries (default 8) and returns `remaining`/`complete`.
-- Maintenance, rendering, OCR, embeddings, and server startup observe cooperative cancellation; plugin disposal cancels and drains owned work.
-- OCR server startup is deduplicated by endpoint and honors an explicit URL port. Only PIDs started and recorded by the plugin are stopped during disposal; an external already-running server is left alone.
-
-## 7. Parts Not Fully Implemented at Present
-
-Here, “not implemented” should be understood as: **the current version does not have sufficient evidence to deliver it as a complete reproduction**. It does not mean that these directions are theoretically impossible forever.
-
-| Item | Current Status | Why It Is Not Fully Implemented |
+| Item | Current status | Delivery limitation |
 |---|---|---|
-| DeepEncoder internal tensor | Per-layer hidden states and per-layer visual tokens are not exported | The current plugin invokes the model through llama.cpp/GGUF's public HTTP interface, which returns generation results, usage, or embeddings but does not provide internal layer hooks |
-| Official internal embedding | Interface-level visual embeddings are supported | Vectors returned by `/v1/embeddings` cannot directly prove that they are equivalent to the DeepEncoder representations inside the paper; this requires the official model code, processor, pooling/projection locations, and item-by-item calibration |
-| Paper-scale training | A small-scale LoRA locator closed loop has been completed | Paper-scale training requires more data, more compute time, a stable long-running inference service, and consistent data and training protocols |
-| Complete benchmark reproduction | R1–R6 and local isolated tests are available | Long-horizon benchmarks such as Mind2Web, AppWorld, and RULER require complete data, evaluation environments, and experimental conditions consistent with the paper |
+| DeepEncoder internal tensors | Per-layer hidden states and visual tokens are not exported | The plugin calls llama.cpp/GGUF through a public HTTP interface, which does not expose internal layer hooks |
+| Official internal embeddings | Interface-level visual embeddings are supported | Vectors from `/v1/embeddings` still need item-by-item calibration against the paper's internal representation |
+| Paper-scale training | A small-scale LoRA locator workflow is complete | The paper's data, compute budget, stable service, and training protocol are not present |
+| Complete benchmark reproduction | R1–R6 and local isolated tests are available | Mind2Web, AppWorld, and RULER require their complete data, evaluation environment, and paper-matched conditions |
 
-## 8. Why These Limitations Are Related to the Test Environment
+These points describe the evidence available for the current release. They do not claim that the directions are impossible in a future backend.
 
-### 8.1 Internal Tensors Are Not an Ordinary Plugin Feature
+## 6. Backend and resource requirements
 
-SoM image generation, file storage, segment localization, and original-text Fetch can all be completed at the plugin layer; however, the DeepEncoder's internal tensors belong to the model runtime's internal state.
-
-The current path is:
+The plugin layer can generate SoM images, store files, locate segments, and fetch source text. The runtime path is:
 
 ```text
 Plugin → OpenAI-compatible interface → llama.cpp / GGUF model
 ```
 
-Obtaining internal states requires switching to an execution method that loads the model directly and additionally completing the following:
+Reading DeepEncoder state would require a direct model-loading path, compatible source and weights, hooks in the forward pass, verification of each layer's token definition, and a new service interface for the plugin. That is a separate model-backend project.
 
-1. Load compatible model source code and weights;
-2. Locate the DeepEncoder forward path;
-3. Insert hooks to export intermediate tensors;
-4. Confirm that the definition of tokens at each layer is consistent with the paper;
-5. Then provide a new service interface for the plugin to use.
+Interface-level embeddings and some LoRA tests already run. Further calibration needs a Transformers or native inference path with model hooks, followed by item-by-item comparison between the official implementation and the current backend output.
 
-This is already a new model backend engineering project and cannot be completed merely by adding a DSH tool.
-
-### 8.2 The Embedding Issue Is Not Simply a GPU Issue
-
-The test environment can already run interface-level visual embeddings and can also conduct some LoRA experiments. Therefore, the limitation is not that “AMD GPUs absolutely cannot do this.” The actual issue is that the current backend does not expose the official internal representations, and there is insufficient evidence to prove that the pooled embeddings returned by the interface are fully consistent with the internal embeddings in the paper.
-
-Further progress would require a Transformers/native inference path that allows model hooks, together with consistency calibration between the official implementation and the current backend's output.
-
-### 8.3 Paper Scale Is a Resource and Protocol Issue
-
-Small-scale training on the test environment has already demonstrated that:
+Small-scale training has demonstrated that the following workflow runs:
 
 ```text
 SoM data → image input → binary supervision → LoRA → strict decoding → localization evaluation
 ```
 
-This closed loop can work. However, a small-scale closed loop is not equivalent to the paper's main table. Further scaling also requires:
+This result does not replace the paper's main table. Scaling up also requires the paper's data and splits, a larger training and evaluation budget, a long-running inference service, and consistent model versions, quantization, prompts, label syntax, and evaluation scripts.
 
-- The data used in the paper and its complete splits;
-- A larger training and evaluation budget;
-- Complete runtime conditions for benchmarks such as Mind2Web, AppWorld, and RULER;
-- Strict alignment of model versions, quantization, prompts, label syntax, and evaluation scripts.
-
-Therefore, the most honest current delivery statement is: the plugin implements the primary engineering mechanisms of OCR1/OCR-Memory, but does not claim to reproduce the DeepEncoder's internal implementation or the paper-scale experimental results.
-
-## 9. References
+## 7. References
 
 - [Official DeepSeek-OCR repository](https://github.com/deepseek-ai/DeepSeek-OCR)
 - [Official DeepSeek-OCR README](https://github.com/deepseek-ai/DeepSeek-OCR/blob/main/README.md)
