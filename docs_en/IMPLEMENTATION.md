@@ -84,10 +84,10 @@ The current release does not claim layer-wise DeepEncoder tensors, paper-scale t
 
 ## 4. Related documents
 
-- [README](../README.en.md) quick start
+- [README](../README.md) quick start
 - [DEPLOYMENT.md](DEPLOYMENT.md) backend deployment and platform validation
 - [STATUS.md](STATUS.md) current status
 - [BENCHMARK.md](BENCHMARK.md) isolated benchmark
 - [EXPLORATION.md](EXPLORATION.md) research and experiment log
 - [TEST_SPEC.md](TEST_SPEC.md) and [TEST_REPORT.md](TEST_REPORT.md) test specification and results
-- [Paper mapping and plugin boundaries](2510.18234-paper-vs-plugin-verifiable-concepts.md)
+- [Paper mapping and plugin boundaries](../docs/2510.18234-paper-vs-plugin-verifiable-concepts.md)

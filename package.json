@@ -21,7 +21,7 @@
     "scripts/*.patch",
     "scripts/vllm_processors/*.py",
     "README.md",
-    "README.en.md",
+    "README.zh.md",
     "docs/*.md",
     "docs_en/*.md",
     "LICENSE",

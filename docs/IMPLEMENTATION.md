@@ -84,7 +84,7 @@
 
 ## 4. 相关文档
 
-- [README.md](../README.md) 快速入口
+- [README.md](../README.zh.md) 快速入口
 - [DEPLOYMENT.md](DEPLOYMENT.md) 后端部署与平台验证
 - [STATUS.md](STATUS.md) 当前状态
 - [BENCHMARK.md](BENCHMARK.md) 隔离基准

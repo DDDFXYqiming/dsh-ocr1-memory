@@ -4,7 +4,7 @@
 
 This document contains platform-specific backend, model-conversion, and validation guidance. It is not a compatibility guarantee for every machine.
 
-For quick configuration, see [README.en.md](../README.en.md); for the general architecture, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
+For quick configuration, see [README.md](../README.md); for the general architecture, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## 1. Backend contract
 

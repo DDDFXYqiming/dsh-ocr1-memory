@@ -2,7 +2,7 @@
 
 # dsh-ocr1-memory Status Overview
 
-Quick links: [README](../README.en.md) · [Implementation Notes](IMPLEMENTATION.md) · [Deployment Record](DEPLOYMENT.md) · [Benchmark](BENCHMARK.md) · [Test Report](TEST_REPORT.md)
+Quick links: [README](../README.md) · [Implementation Notes](IMPLEMENTATION.md) · [Deployment Record](DEPLOYMENT.md) · [Benchmark](BENCHMARK.md) · [Test Report](TEST_REPORT.md)
 
 ## Current Status
 

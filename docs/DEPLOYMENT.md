@@ -2,7 +2,7 @@
 
 # 部署与验证记录（Deployment Notes）
 
-本文收纳平台相关的部署方法、定位器模型转换和已验证的运行边界；它们不是所有机器的兼容性承诺。快速配置请看 [README.md](../README.md)，通用架构请看 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
+本文收纳平台相关的部署方法、定位器模型转换和已验证的运行边界；它们不是所有机器的兼容性承诺。快速配置请看 [README.md](../README.zh.md)，通用架构请看 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
 ## 1. 后端接口
 
