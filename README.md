@@ -1,138 +1,95 @@
-[简体中文](README.zh.md) | English
+简体中文 | [English](README.en.md)
 
 # @dsh-external/dsh-ocr1-memory
 
-A DSH optical-memory plugin built on the idea in the **DeepSeek-OCR** paper (Contexts Optical Compression, OCR1).
+**基于 DeepSeek-OCR 光学上下文压缩（OCR1）的 DeepSeek Harness 视觉记忆扩展**。
 
-Text memories are split into paragraphs and rendered as SoM-numbered images. Older memories move through lower-resolution tiers as they age. Retrieval defaults to text and OCR evidence, an optical locator can optionally pick the relevant segments first, and the original verbatim text comes back deterministically at the end.
+本插件将 DeepSeek-OCR 论文中提出的“上下文光学压缩”（Contexts Optical Compression, OCR1）前沿架构引入智能体记忆工程中。系统将长文本记忆分段排版并渲染为带有 Set-of-Mark (SoM) 编号的光学图像，利用视觉 Token 对文本信息的超高信息密度进行压缩存储，并结合动态分辨率衰减与主动回忆（Active Recall）机制，在保持极高压缩率的同时实现无损原文召回。
 
-Rendering memory as images borrows the paper's approach to optical context compression. To see what that actually saves, `ocr1_mem_metrics` reports text tokens, visual tokens, and the compression ratio.
+---
 
-## Capabilities
+## 核心设计与技术亮点
 
-| Tool | Purpose |
-|---|---|
-| `ocr1_mem_status` | Inspect storage, renderer, and OCR status |
-| `ocr1_mem_store` | Segment, render, and store a memory |
-| `ocr1_mem_update` | Replace a memory and reset its freshness |
-| `ocr1_mem_retrieve` | Retrieve, OCR read back, and active-recall memories |
-| `ocr1_mem_list` | List entries and hit counts |
-| `ocr1_mem_metrics` | Inspect text/visual tokens and compression ratios |
-| `ocr1_mem_calibrate` | Calibrate the text-token baseline |
-| `ocr1_mem_forget` | Delete a memory and its optical artifacts |
-| `ocr1_mem_render_test` | Test the rendering pipeline |
-| `ocr1_mem_embed_test` | Test visual embeddings |
-| `memory_read` / `memory_retrieve` | Read governed memory and use OCR1-backed retrieval |
-| `memory_write` / `memory_update` | Evidence-backed writes and updates |
-| `memory_search` / `memory_promote` | Full-text search and cross-namespace promotion |
-| `memory_pending` / `memory_accept` | Review and accept distilled candidates |
-| `memory_maintain` / `memory_stats` | Deduplicate, compact L1, and inspect state |
-| `memory_index` / `memory_archive` / `memory_rollback` | Rebuild the index, archive, and restore history |
-| `memory_expand` / `memory_activate` | Expand DSH provenance events and activate governance |
+* **文本光学压缩（Optical Context Compression）**：打破传统纯文本或嵌入向量存储的局限，将段落文本渲染为密集视觉图像。通过视觉 Token 替代海量文本 Token，在长程上下文中显著削减 Token 开销。
+* **分级分辨率衰减与主动回忆（Active Recall）**：
+  * **时间衰减三档位**：记忆图像随时间推移在 `vivid (高清)` → `normal (标准)` → `fuzzy (模糊/低显存)` 档位间动态退化。
+  * **主动回忆机制**：当检索命中低分辨率历史记忆时，系统触发 Active Recall 将其自动恢复至高清层，保证后续重读的高置信度。
+* **SoM 空间标记与光学定位器（Optical Locator）**：
+  * 图像预置 SoM 编号锚点，支持可选的轻量级本地视觉定位器（基于 GGUF/llama-server）。
+  * 模型仅需输出 K-bit 的 `0/1` 视觉分类标记即可快速命中目标候选段落，最后精准还原并输出百分之百真实的原文。
+* **压缩效率监控面板（Metrics & Baseline）**：内建 `ocr1_mem_metrics` 工具，实时跟踪文本 Token 数、视觉 Token 消耗及实际光学压缩比。
+* **完备的治理与生命周期**：原生兼容三层记忆治理体系（L1 索引紧凑化、版本回滚、归档与跨命名空间晋升）。
 
-## How it works
+---
 
-1. Text is split by blank lines and length into paragraphs, then rendered into SoM images.
-2. Resolution decays with age through the `vivid → normal → fuzzy` tiers. When a lookup hits a low-resolution memory, active recall restores it to high resolution first.
-3. Retrieval uses text overlap and optional OCR evidence by default. With an optical locator configured, the model emits K-bit `0/1` labels and the plugin selects segments using threshold and Top-K rules.
-4. Fetch reads the selected segments from the persisted source text and returns them verbatim, with no substitute text in between.
-5. Visual embeddings and hit-frequency decay are optional. Per-turn context injection is on by default, with `index` mode injecting L1 and optical metadata, and `contextMode: snapshot` keeping body snapshots.
-6. Governance tools share the same plugin instance. Maintenance is bounded by `maintenanceBatchSize`, can be cancelled, runs single-flight per namespace, and drains on disposal.
+## 运行架构
 
-## Configuration
+```
+[原始长文本] ──> [段落切片 + 排版] ──> [渲染为 SoM 标记图像] ──> [分辨率衰减管理]
+                                                                        │
+                                                                        ▼
+[无损原文输出] <── [精确原文回溯] <── [视觉定位器 / OCR 筛选] <── [检索触发 (Active Recall)]
+```
 
-Override the needed options in the profile's `cordis.patch.yml`.
+---
+
+## 工具矩阵
+
+| 工具名称 | 核心职责 | 技术特征 |
+| :--- | :--- | :--- |
+| `ocr1_mem_store` | 将文本切片、渲染为 SoM 图像并光学存盘 | 光学渲染与索引录入 |
+| `ocr1_mem_retrieve` | 光学与文本混合检索，触发 Active Recall | 多模态召回与高清恢复 |
+| `ocr1_mem_metrics` | 统计文本 Token、视觉 Token 及压缩比率 | 量化评估面板 |
+| `ocr1_mem_update` | 更新记忆内容并重置其生命周期活跃度 | 增量重构与刷新 |
+| `ocr1_mem_calibrate`| 校准基准分词器与文本 Token 估算基线 | 基线标定 |
+| `ocr1_mem_forget` | 彻底擦除指定记忆及其衍生的光学图像文件 | 物理擦除 |
+| `memory_read` / `write` | 兼容通用分层治理读写接口 | 治理体系互通 |
+
+---
+
+## 安装与快速上手
+
+```bash
+# 通过 DSH 插件管理器安装
+dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
+```
+
+本地开发：
+```bash
+git clone https://github.com/DDDFXYqiming/dsh-ocr1-memory.git
+cd dsh-ocr1-memory
+npm install && npm run build
+dsh plugin --profile web add .
+```
+
+---
+
+## 配置指南
+
+在对应 Profile 的 `cordis.patch.yml` 中配置光学存储与 OCR 服务：
 
 ```yaml
 - id: dsh-ocr1-memory
   config:
-    storeDir: ''
-    memoryDir: '~/.dsh/memory'
-    maxIndexLines: 30
-    autoNamespace: true
-    autoPending: true
-    maintainEveryTurns: 20
-    maintenanceBatchSize: 8 # maximum optical entries processed per maintenance call
+    memoryDir: '~/.dsh/memory'         # 记忆与光学文件主目录
+    ocrModel: 'deepseek-ai/DeepSeek-OCR' # OCR 模型标识
+    requireOcr: false                  # 是否在 OCR 服务离线时阻断降级
+    maintenanceBatchSize: 8            # 批次维护的光学条目上限
 
-    # OCR / llama-server
-    ocrBaseUrl: ''
-    ocrApiKey: ''
-    ocrModel: 'deepseek-ai/DeepSeek-OCR'
-    requireOcr: false # true = fail when OCR is unavailable; no silent text fallback
-    autoStartOcrServer: false
-    ocrServerPath: '' # or OCR_SERVER_PATH / llama-server on PATH
-    ocrModelDir: ''
-    ocrServerPort: 18080
+    # 本地 llama-server 自启配置（可选）
+    autoStartOcrServer: false          # 是否由插件托管拉起 OCR 服务进程
+    ocrServerPort: 18080               # 服务端口
+    ocrServerPath: ''                  # llama-server 二进制绝对路径
+    ocrModelDir: ''                    # GGUF 模型文件目录
 
-    # Optical locator
-    opticalLocatorEnabled: false
-    opticalLocatorBaseUrl: ''
-    opticalLocatorModel: 'deepseek-ocr-memory'
-    opticalLocatorThreshold: 0.4
-    opticalLocatorTopK: 5
-    opticalLocatorStrict: true
-    opticalLocatorAutoStart: false
-    opticalLocatorServerPath: ''
-    opticalLocatorModelDir: ''
-    opticalLocatorServerPort: 18081
-    opticalLocatorModelFile: 'deepseek-ocr-locator-q8_0.gguf'
-    opticalLocatorMmprojFile: 'mmproj-locator-q8_0.gguf'
-
-    # Context / retrieval
-    dynamicDecayEnabled: false
-    autoInjectContext: true
-    contextMode: 'index' # 'snapshot' keeps full-body memory snapshots
-    contextMaxEntries: 5
-    contextMaxChars: 4000
-    sharedStore: false
-    embeddingRetrieval: false
-    ocrMaxEntriesPerRetrieve: 5
+    # 光学定位器设置（可选）
+    opticalLocatorEnabled: false       # 是否启用基于视觉定位器的快速标记过滤
+    opticalLocatorThreshold: 0.4       # 召回阈值
+    opticalLocatorTopK: 5              # 最大候选数
 ```
 
-To let the plugin manage a real CPU `llama-server`, set `autoStartOcrServer` to `true` and provide both `ocrServerPath` and `ocrModelDir`. If `ocrBaseUrl` contains an explicit port, that port is authoritative for health checks and launch. Embedding retrieval stays out of the main retrieval path by default. To reuse the same service, leave `ocrEmbeddingBaseUrl` empty. A trained locator can auto-start on a separate endpoint through `opticalLocatorAutoStart`, and `OPTICAL_LOCATOR_MODEL_DIR` can provide its model directory.
+---
 
-**Environment-variable fallbacks** (applied only when the matching Config field is empty; Config always wins. Aimed at source runs and scripts — profile deployments should keep everything in cordis.yml): `OCR_SERVER_PATH` (default server path for ocr/embedding/locator), `OCR_MODEL_DIR` / `OCR_EMBEDDING_MODEL_DIR` (model directories), `OPTICAL_LOCATOR_MODEL_DIR` (locator model directory), `PYTHON` (renderer executable).
+## 许可证
 
-Advanced options are documented in [docs_en/IMPLEMENTATION.md](docs_en/IMPLEMENTATION.md).
-
-## Installation
-
-```bash
-dsh plugin --profile web add github:DDDFXYqiming/dsh-ocr1-memory
-```
-
-## OCR backend
-
-The plugin talks to its backend through OpenAI-compatible endpoints (the official llama.cpp server documentation lists `/v1/chat/completions`, `/v1/embeddings`, and multimodal input).
-
-- `/v1/chat/completions` handles OCR read-back and optical locating.
-- `/v1/embeddings` provides optional multimodal visual embeddings.
-
-Set `ocrBaseUrl` and OCR is ready to use. With `requireOcr: false`, an unavailable backend preserves the text retrieval path. With `requireOcr: true`, OCR errors are reported directly. With `autoStartOcrServer`, the plugin deduplicates startup by endpoint and only cleans up processes it started itself. Backend startup, CPU-only configuration, model formats, and platform notes are in [docs_en/DEPLOYMENT.md](docs_en/DEPLOYMENT.md).
-
-## Documentation
-
-| Document | Contents |
-|---|---|
-| [WORKFLOW](docs_en/OPTICAL_MEMORY_WORKFLOW.md) | Workflow diagrams |
-| [IMPLEMENTATION](docs_en/IMPLEMENTATION.md) | Architecture and implementation notes |
-| [DEPLOYMENT](docs_en/DEPLOYMENT.md) | Backend deployment and validation |
-| [STATUS](docs_en/STATUS.md) | Current implementation status |
-| [BENCHMARK](docs_en/BENCHMARK.md) | Isolated comparison with `dsh-memory` |
-| [EXPLORATION](docs_en/EXPLORATION.md) | Research and experiment notes |
-| [TEST_SPEC](docs_en/TEST_SPEC.md) / [TEST_REPORT](docs_en/TEST_REPORT.md) | Testing documentation |
-| [PAPER_MAPPING](docs/2510.18234-paper-vs-plugin-verifiable-concepts.md) | Paper-native mechanisms versus engineering extensions |
-
-The current `npm test` run is 88/88 when the live backend is available (real-backend cases skip otherwise).
-
-## Local tool paths
-
-Migration defaults use `.dsh/memory` and `.dsh/ocr1-memory` under the current home directory. Override them with `OLD_MEMORY_ROOT` and `OCR1_STORE_DIR`. Curated migration also accepts `OLD_MEMORY_NAMESPACE`, defaulting to the current system username. The renderer path is resolved from the script location, independently of the working directory.
-
-`scripts/build.sh` only attempts profile-link repair when `DSH_PROFILE_NODE_MODULES` is explicitly configured.
-
-## Further references
-
-- [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR) · [paper](https://arxiv.org/abs/2510.18234)
-- [OCR-Memory](https://arxiv.org/abs/2604.26622)
-- [AgentOCR](https://github.com/langfengQ/AgentOCR)
+本项目基于 [MIT License](LICENSE) 开源。
