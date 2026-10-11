@@ -24,11 +24,14 @@ Implements the cutting-edge "Contexts Optical Compression" (OCR1) architecture f
 
 ## Processing Flow
 
-```
-[Verbatim Text] ──> [Partition & Layout] ──> [Render SoM Images] ──> [Resolution Tier Decay]
-                                                                                │
-                                                                                ▼
-[Lossless Original Text] <── [Source Text Retrieval] <── [Locator / OCR Read] <── [Query Trigger (Active Recall)]
+```mermaid
+flowchart TD
+    A["Verbatim Source Text"] --> B["Partitioning & Layout Engine"]
+    B --> C["Render to SoM-Annotated Images"]
+    C --> D["Resolution Tier Decay (vivid / normal / fuzzy)"]
+    D --> E["Query Trigger (Active Recall)"]
+    E --> F["Optical Locator / Fast OCR Filter"]
+    F --> G["Verbatim Text Retrieval & Lossless Output"]
 ```
 
 ---
